@@ -1,6 +1,6 @@
 ---
 name: agents-md-setup
-description: Set up a project's agent instructions as a single source of truth — AGENTS.md as the real file, with CLAUDE.md (and optionally other agents' files) as symlinks to it. Use when starting/bootstrapping a repo, when asked to "add a CLAUDE.md / AGENTS.md", "set up project conventions / agent instructions", "make Claude use AGENTS.md", or when a repo has a standalone CLAUDE.md that should become cross-tool. Also use to fix duplicated/drifting CLAUDE.md + AGENTS.md.
+description: Set up a project's agent instructions as a single source of truth — AGENTS.md as the real file, with CLAUDE.md (and optionally other agents' files) as symlinks to it. Use when starting/bootstrapping a repo, when asked to "add a CLAUDE.md / AGENTS.md", "set up project conventions / agent instructions", "make Claude use AGENTS.md", or when a repo has a standalone CLAUDE.md that should become cross-tool. Also use to fix duplicated/drifting CLAUDE.md + AGENTS.md, or to add per-workspace instructions in a monorepo (Turborepo / pnpm workspaces).
 metadata:
   author: stealth-engine
   version: "1.0.0"
@@ -54,6 +54,29 @@ Optionally point other tools at the same file:
 ln -s AGENTS.md GEMINI.md
 mkdir -p .github && ln -s ../AGENTS.md .github/copilot-instructions.md
 ```
+
+## Monorepos (Turborepo / workspaces)
+
+Keep a **root `AGENTS.md`** for repo-wide conventions (with the `CLAUDE.md`
+symlink as above), then add a **scoped `AGENTS.md` in each workspace** that needs
+its own rules — `apps/<app>/AGENTS.md`, `packages/<pkg>/AGENTS.md` — each with its
+own sibling symlink created **from inside that directory** so the target is
+relative:
+
+```bash
+cd apps/web && ln -s AGENTS.md CLAUDE.md   # CLAUDE.md -> ./AGENTS.md (same dir)
+```
+
+- Claude Code reads the **nearest** `CLAUDE.md` for the files it's working on, so
+  nested files **supplement** the root rather than replace it. Put repo-wide
+  things at the root; put only the package-specific delta in each workspace —
+  don't duplicate the root.
+- Always make each symlink **relative to its own folder** (`ln -s AGENTS.md
+  CLAUDE.md` while `cd`'d into the workspace), never pointing back at the root —
+  relative same-dir links survive checkout/move.
+- Turborepo itself doesn't read these files (they're for agents), so **no
+  `turbo.json` change is needed**. If you want them surfaced, you can still note
+  the convention in the root `AGENTS.md`.
 
 ## README
 
