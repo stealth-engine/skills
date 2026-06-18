@@ -36,7 +36,12 @@ export function extractLocaleFromPath(pathname: string): string | null {
 /** Strip the locale prefix: '/zh-hk/about' → '/about'. */
 export function removeLocaleFromPath(pathname: string): string {
   const locale = extractLocaleFromPath(pathname);
-  return locale ? pathname.replace(`/${locale}`, '') || '/' : pathname;
+  // `locale` is canonical (lowercase) but the URL segment may be any case
+  // (`/EN-HK/about`), so match the leading segment case-insensitively and only
+  // at a `/` boundary (never mid-path).
+  return locale
+    ? pathname.replace(new RegExp(`^/${locale}(?=/|$)`, 'i'), '') || '/'
+    : pathname;
 }
 
 export function isValidLocale(locale: string): boolean {

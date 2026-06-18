@@ -3,7 +3,7 @@ name: skill-publishing
 description: How to author and publish agent skills for the skills.sh / `npx skills` ecosystem — the SKILL.md format, why the frontmatter description is the trigger, multi-skill repo layout, the `skills` CLI (init/add/list/find/update/remove with flags), publishing to GitHub with SEO metadata, and public vs private repos (it git-clones, so private works with auth). Use when asked to "create/write/author a skill", "publish a skill", "set up a skills repo", "make a skill installable/discoverable", "use npx skills", or "can I use a private skills repo".
 metadata:
   author: stealth-engine
-  version: "1.0.0"
+  version: "1.0.1"
 ---
 
 # skill-publishing
@@ -61,7 +61,7 @@ If the agent won't *match* it to the right moment, the skill is dead weight.
 A skill is a **directory**, not just one file. `SKILL.md` is the entry point; you
 can ship reference docs, scripts, templates, and assets next to it:
 
-```
+```text
 skills/my-skill/
   SKILL.md                 # entry: frontmatter + concise body
   reference/
@@ -87,7 +87,7 @@ small skill is perfectly fine as a single `SKILL.md`.
 
 ## Repo layout (bundling many skills)
 
-```
+```text
 skills/<skill-name>/SKILL.md            # flat (preferred)
 skills/<category>/<skill-name>/SKILL.md # categorised (only if you have enough)
 SKILL.md                                # a single skill at repo root also works

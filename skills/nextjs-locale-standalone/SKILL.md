@@ -3,7 +3,7 @@ name: nextjs-locale-standalone
 description: Add locale-prefixed i18n routing to a single (non-monorepo) Next.js App Router site — a middleware/proxy that redirects `/` and any unprefixed path to `/<locale>/…` using the locale toggle's last choice (the NEXT_LOCALE cookie) then the browser's Accept-Language, a `[locale]` layout with a LocaleProvider + hooks, and a LocaleToggle that persists the choice. Use when adding bilingual/multilingual routing to a standalone Next.js site, building `/en-hk/…` `/zh-hk/…` URL namespaces, redirecting the root to a default-or-remembered locale, persisting a language switch across visits, or detecting browser language in middleware. For a monorepo that shares this logic across several apps via a workspace package, use nextjs-locale-monorepo instead.
 metadata:
   author: stealth-engine
-  version: "1.0.0"
+  version: "1.0.1"
 ---
 
 # Next.js locale routing — standalone site
@@ -20,14 +20,18 @@ the right locale. Drop-in copy-paste files are in [`templates/`](./templates).
 - **URLs are locale-namespaced:** `/en-hk/about`, `/zh-hk/about`. One locale is
   the default.
 - **The proxy redirects unprefixed paths.** A request to `/about` (or `/`) with no
-  known locale prefix is 307-redirected to `/<locale>/about`, preserving query +
-  hash. The locale is resolved by this **priority**:
+  known locale prefix is 307-redirected to `/<locale>/about`, preserving the query
+  string. (URL hashes are client-side only — they never reach the server, so the
+  proxy can't and needn't carry them; the LocaleToggle, running in the browser,
+  does preserve the hash.) The locale is resolved by this **priority**:
   1. **`NEXT_LOCALE` cookie** — the toggle's last choice (if the visitor has ever switched).
   2. **`Accept-Language`** — the browser's preferred language (exact match, then language-only, e.g. `zh` → `zh-hk`).
   3. **Default locale.**
 - **Already-prefixed paths pass through** (`NextResponse.next()`), and the proxy
-  stamps the response: `x-locale` header, `Vary: Accept-Language, Cookie`, and
-  (re)writes `NEXT_LOCALE` when it differs.
+  stamps the response: `x-locale` header and a (re)write of `NEXT_LOCALE` when it
+  differs. It does **not** add `Vary: Accept-Language, Cookie` here — on a prefixed
+  path the locale is fixed by the URL, so varying on those inputs would fragment
+  the CDN cache for nothing. Only the negotiated **redirect** sets that `Vary`.
 - **The toggle persists via that cookie.** The LocaleToggle just navigates to
   `/<newLocale>/…`; the proxy, seeing a prefixed path, writes `NEXT_LOCALE` — so
   the next time the visitor lands on `/`, step 1 sends them back to that choice.
@@ -48,13 +52,15 @@ Copy them from [`templates/`](./templates) and adjust `supportedLanguages`.
 ## Wiring steps
 
 1. **Define locales** in `lib/i18n.ts` (`{ id, title, isDefault? }[]`).
-2. **Move pages under `app/[locale]/`.** In the App Router the *topmost* layout
-   must render `<html>` + `<body>`. The clean setup is to make
-   `app/[locale]/layout.tsx` that root layout and have **no `app/layout.tsx`** —
-   valid as long as every page lives under `[locale]`. (`app/globals.css`,
-   `app/global-error.tsx`, `app/api/*`, `app/icon.png` stay at `app/`.) If you
-   keep an `app/layout.tsx`, make it a pass-through that returns `children` and
-   move `<html>`/`<body>` into the `[locale]` layout — never render them twice.
+2. **Move pages under `app/[locale]/`.** In the App Router the *root* layout — the
+   topmost `layout.tsx` — is the one that must render `<html>` + `<body>`, and
+   Next errors if it doesn't. So make `app/[locale]/layout.tsx` *be* that root
+   layout and have **no `app/layout.tsx` at all** — valid as long as every page
+   lives under `[locale]`. (`app/globals.css`, `app/global-error.tsx`, `app/api/*`,
+   `app/icon.png` stay at `app/`.) Don't keep a pass-through `app/layout.tsx` that
+   returns bare `children`: it would be the root layout, and Next rejects a root
+   layout without `<html>`/`<body>`. You also can't read the `[locale]` param up
+   there, so there's no reason to keep it — delete it and let `[locale]` be root.
 3. **Add the proxy** at the project root and the matcher (below).
 4. **Add the toggle** somewhere in the layout/nav.
 
@@ -69,8 +75,11 @@ warning. The template ships as `proxy.ts`.
 The matcher excludes assets and API so they never redirect:
 
 ```ts
-export const config = { matcher: ['/((?!_next|api|.*\\..*).*)'] };
+export const config = { matcher: ['/((?!_next(?:/|$)|api(?:/|$)|.*\\..*).*)'] };
 ```
+
+The `(?:/|$)` after `_next` and `api` anchors them to a path segment, so real
+pages like `/apiary` still get locale-prefixed (a bare `api` would skip them).
 
 Also guard inside the function (`shouldSkip`) for `/_next`, `/api`,
 `/.well-known`, `/favicon`, and anything with a file extension — the matcher and
@@ -80,8 +89,10 @@ the guard are belt-and-suspenders.
 
 - **Cookie is `httpOnly: false`** so client code/analytics can read the active
   locale; it's not a secret. `sameSite: 'lax'`, `secure` on HTTPS, 1-year `maxAge`.
-- **Set `Vary: Accept-Language, Cookie`** (the proxy does) so a CDN never serves
-  one visitor's locale to another.
+- **Set `Vary: Accept-Language, Cookie`** on the *negotiated redirect* (the proxy
+  does) so a CDN never serves one visitor's locale to another. Prefixed pass-through
+  responses skip it — their locale is fixed by the URL, so the extra `Vary` would
+  only fragment the cache.
 - **Language-only fallback matters:** a browser sending `zh-TW` or `zh` should
   resolve to your `zh-hk`. The matcher in `lib/i18n.ts` tries exact, then the
   primary subtag.

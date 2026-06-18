@@ -3,7 +3,7 @@ name: nextjs-locale-monorepo
 description: Add locale-prefixed i18n routing across a Next.js monorepo (Turborepo / pnpm workspaces) by extracting the engine into a shared workspace package that every app consumes — locale detection + a middleware/proxy factory + a `use client` LocaleProvider/hooks, plus a shared supportedLanguages config. Each app redirects `/` and unprefixed paths to `/<locale>/…` from the toggle's last choice (the NEXT_LOCALE cookie) then the browser's Accept-Language, wiring only a thin middleware + `[locale]` layout. Use when several apps in one repo need consistent `/en-hk/…` `/zh-hk/…` routing, sharing locale logic via a workspace package instead of copy-paste, dual ESM/CJS build of a package that ships a client provider, Turbo build-ordering so the lib builds before the apps, or per-app locale wiring. For a single standalone site, use nextjs-locale-standalone instead.
 metadata:
   author: stealth-engine
-  version: "1.0.0"
+  version: "1.0.1"
 ---
 
 # Next.js locale routing — monorepo (shared package)
@@ -18,8 +18,10 @@ Read that sibling skill for the behaviour spec; this skill is about the
 
 Unprefixed requests 307-redirect to `/<locale>/…`, locale chosen by priority:
 **`NEXT_LOCALE` cookie (toggle's last choice) → `Accept-Language` (browser) →
-default**. Prefixed paths pass through and get `x-locale` + `Vary` + the
-`NEXT_LOCALE` cookie stamped. The LocaleToggle navigates to `/<newLocale>/…`; the
+default**. The redirect carries `Vary: Accept-Language, Cookie` (its locale was
+negotiated from them); prefixed paths pass through with `x-locale` + the
+`NEXT_LOCALE` cookie stamped but **no** such `Vary` (their locale is fixed by the
+URL, so it'd only fragment the cache). The LocaleToggle navigates to `/<newLocale>/…`; the
 middleware is the single writer of the cookie, so the choice persists. Full
 explanation + a toggle template: see **nextjs-locale-standalone**.
 

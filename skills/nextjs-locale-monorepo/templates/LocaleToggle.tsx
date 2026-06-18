@@ -14,7 +14,10 @@ export function LocaleToggle() {
     if (locale === current) return;
 
     const segments = (pathname ?? '/').split('/').filter(Boolean);
-    if (supportedLanguages.some((l) => l.id === segments[0])) {
+    // Match the first segment case-insensitively (the middleware/layout accept
+    // `/EN-HK/…`), else `/EN-HK/x` would gain a second prefix: `/zh-hk/EN-HK/x`.
+    const first = segments[0]?.toLowerCase();
+    if (supportedLanguages.some((l) => l.id === first)) {
       segments[0] = locale; // replace existing prefix
     } else {
       segments.unshift(locale); // unprefixed — add one

@@ -118,7 +118,10 @@ export function createLocalizedUrl(
 
 export function removeLocaleFromPath(pathname: string, locales: string[]): string {
   const locale = extractLocaleFromPath(pathname, locales);
-  if (locale) return pathname.replace(`/${locale}`, '') || '/';
+  // `locale` is canonical (lowercase) but the URL segment may be any case
+  // (`/EN-HK/about`), so match the leading segment case-insensitively and only
+  // at a `/` boundary (never mid-path).
+  if (locale) return pathname.replace(new RegExp(`^/${locale}(?=/|$)`, 'i'), '') || '/';
   return pathname;
 }
 

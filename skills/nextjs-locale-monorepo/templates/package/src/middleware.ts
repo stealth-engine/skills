@@ -13,18 +13,24 @@ export function setLocaleOnResponse(
   response: NextResponse,
   request: NextRequest,
   locale: string,
-  config: Required<I18nConfig>
+  config: Required<I18nConfig>,
+  varyOnNegotiation = false
 ): NextResponse {
   response.headers.set('x-locale', locale);
 
-  // Cache must vary by the inputs that decide the locale.
-  const vary = response.headers.get('Vary');
-  const needed = ['Accept-Language', 'Cookie'];
-  const current = new Set(
-    (vary ?? '').split(',').map((s) => s.trim()).filter(Boolean)
-  );
-  for (const h of needed) current.add(h);
-  response.headers.set('Vary', Array.from(current).join(', '));
+  // Cache must vary by the inputs that decide the locale — but only when the
+  // locale was actually negotiated from those inputs (the redirect branch).
+  // On an already-prefixed path the locale comes from the URL, so varying on
+  // Cookie/Accept-Language would fragment the CDN cache pointlessly.
+  if (varyOnNegotiation) {
+    const vary = response.headers.get('Vary');
+    const needed = ['Accept-Language', 'Cookie'];
+    const current = new Set(
+      (vary ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+    );
+    for (const h of needed) current.add(h);
+    response.headers.set('Vary', Array.from(current).join(', '));
+  }
 
   const currentCookie = request.cookies.get(config.cookieName)?.value;
   if (currentCookie !== locale) {
@@ -60,8 +66,9 @@ export function createI18nMiddleware(userConfig: I18nConfig) {
     if (!hasLocale) {
       const locale = getLocaleFromRequest(request, config);
 
-      // Preserve query + hash. clone() exists in the real runtime; the else
-      // branch keeps unit tests (no clone) working.
+      // Preserve the query string. clone() exists in the real runtime; the else
+      // branch keeps unit tests (no clone) working. (URL hashes never reach the
+      // server, so there is nothing to carry over there.)
       let url: URL;
       if (request.nextUrl.clone) {
         url = request.nextUrl.clone();
@@ -70,16 +77,17 @@ export function createI18nMiddleware(userConfig: I18nConfig) {
         const urlObj = new URL(request.url);
         url = new URL(`/${locale}${pathname}`, urlObj.origin);
         url.search = urlObj.search;
-        url.hash = urlObj.hash;
       }
 
       const response = NextResponse.redirect(url.toString());
-      return setLocaleOnResponse(response, request, locale, config);
+      // Locale negotiated from Cookie / Accept-Language → Vary on them.
+      return setLocaleOnResponse(response, request, locale, config, true);
     }
 
     const locale = extractLocaleFromPath(pathname, config.locales)!;
     const response = NextResponse.next();
-    return setLocaleOnResponse(response, request, locale, config);
+    // Already-prefixed: locale comes from the path, so no negotiation Vary.
+    return setLocaleOnResponse(response, request, locale, config, false);
   };
 }
 

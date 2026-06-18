@@ -3,7 +3,7 @@ name: safari26-liquid-glass
 description: How iOS 26 / iPadOS 26 Safari's "Liquid Glass" translucent status & address bars interact with web content, the viewport/keyboard facts behind them, and what to watch for when a design gets creative (immersive/edge-to-edge layouts, custom drawers/modals, gesture panning, themeable backgrounds, canvas). Use when an iPhone/iPad web page shows black/grey bars, content "cut off" at the bar edge, cropped shadows, a drawer/modal that breaks the layout, an inner scroll that won't scroll, the page jumping after the soft keyboard closes, or a canvas blur that won't render on iOS — or before building any full-screen/immersive iOS web UI.
 metadata:
   author: madeinlantau
-  version: "2.0.0"
+  version: "2.0.1"
 ---
 
 # Safari 26 "Liquid Glass" — facts, gotchas, and what to do
@@ -27,9 +27,9 @@ Think of the screen as **two viewports**:
 - **Layout / large viewport** — the full physical screen, *including* behind both
   bars. `100vh`, `100lvh`, and `window.innerHeight` measure this. **`innerHeight`
   is constant** — it does NOT change when the bars show/hide or the keyboard opens.
-- **Visual / small viewport** — only the area *between* the bars. `window.
-  visualViewport.height` and `100svh` measure this; **`100dvh`** tracks it
-  dynamically (it shrinks when the keyboard opens).
+- **Visual / small viewport** — only the area *between* the bars.
+  `window.visualViewport.height` and `100svh` measure this; **`100dvh`** tracks
+  it dynamically (it shrinks when the keyboard opens).
 
 The bars sit over the **edges of the layout viewport** and composite whatever DOM
 pixels are painted there.
@@ -140,8 +140,8 @@ the bar region.
 - Size the band in **definite px** (from `innerHeight`), **not `dvh`** — `dvh`
   shrinks with the keyboard and would resize the whole thing.
 - Put **all chrome inside the band**, in a frame **inset by `PAD`** (= the visible
-  region), with normal insets + `env(safe-area-inset-*)`. **Never `position:
-  fixed`** — that re-breaks the bleed and re-crops shadows.
+  region), with normal insets + `env(safe-area-inset-*)`.
+  **Never `position: fixed`** — that re-breaks the bleed and re-crops shadows.
 - Stop gestures from scrolling the band: `touch-action:none` on the interactive
   surface (canvas does its own pan/zoom) + `overscroll-behavior:none`.
 

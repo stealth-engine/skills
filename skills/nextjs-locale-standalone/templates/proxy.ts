@@ -23,7 +23,8 @@ const HAS_FILE_EXT = /\.[a-z0-9]+(?:$|[?#])/i;
 function shouldSkip(pathname: string): boolean {
   return (
     pathname.startsWith('/_next') ||
-    pathname.startsWith('/api') ||
+    pathname === '/api' ||
+    pathname.startsWith('/api/') || // not '/api' alone — would catch '/apiary'
     pathname.startsWith('/.well-known') ||
     pathname.startsWith('/favicon') ||
     HAS_FILE_EXT.test(pathname)
@@ -47,29 +48,36 @@ export function proxy(request: NextRequest) {
 
     const url = request.nextUrl.clone();
     url.pathname = `/${locale}${pathname}`;
-    return stampLocale(NextResponse.redirect(url), request, locale);
+    // The locale here was negotiated from Cookie / Accept-Language → Vary on them.
+    return stampLocale(NextResponse.redirect(url), request, locale, true);
   }
 
-  return stampLocale(NextResponse.next(), request, current);
+  // Already-prefixed: the locale comes from the path, so do NOT Vary on
+  // Cookie/Accept-Language — that would fragment the CDN cache pointlessly.
+  return stampLocale(NextResponse.next(), request, current, false);
 }
 
 function stampLocale(
   res: NextResponse,
   req: NextRequest,
-  locale: string
+  locale: string,
+  varyOnNegotiation: boolean
 ): NextResponse {
   res.headers.set('x-locale', locale);
 
-  // Caching must vary by the inputs that decide the locale.
-  const vary = new Set(
-    (res.headers.get('Vary') ?? '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-  );
-  vary.add('Accept-Language');
-  vary.add('Cookie');
-  res.headers.set('Vary', [...vary].join(', '));
+  // Caching must vary by the inputs that decide the locale — but only when the
+  // locale was actually negotiated from those inputs (the redirect branch).
+  if (varyOnNegotiation) {
+    const vary = new Set(
+      (res.headers.get('Vary') ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
+    vary.add('Accept-Language');
+    vary.add('Cookie');
+    res.headers.set('Vary', [...vary].join(', '));
+  }
 
   // Remember the active locale (also persists a toggle choice) — only on change.
   if (req.cookies.get(LOCALE_COOKIE)?.value !== locale) {
@@ -86,5 +94,5 @@ function stampLocale(
 }
 
 export const config = {
-  matcher: ['/((?!_next|api|.*\\..*).*)'],
+  matcher: ['/((?!_next(?:/|$)|api(?:/|$)|.*\\..*).*)'],
 };
