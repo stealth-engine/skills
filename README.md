@@ -35,6 +35,7 @@ Manage installed skills with `npx skills list`, `npx skills update`, and
 | ----- | ------------- |
 | [`safari26-liquid-glass`](./skills/safari26-liquid-glass/SKILL.md) | How iOS 26 / iPadOS 26 Safari's "Liquid Glass" status & address bars interact with web content — the viewport/keyboard facts, why `position:fixed` breaks the bleed, the keyboard layout bug (WebKit #297779), and case-dependent fixes for immersive/edge-to-edge designs, custom drawers, and themeable backgrounds. |
 | [`agents-md-setup`](./skills/agents-md-setup/SKILL.md) | Set up a project's agent instructions as one source of truth: `AGENTS.md` as the real file with `CLAUDE.md` (and other tools' files) symlinked to it. Bootstraps a repo, converts a standalone `CLAUDE.md`, or fixes duplicated/drifting instruction files. |
+| [`skill-publishing`](./skills/skill-publishing/SKILL.md) | How to author and publish agent skills for the `npx skills` ecosystem — the `SKILL.md` format, the description-as-trigger rule, multi-skill repo layout, the `skills` CLI, publishing to GitHub with SEO, and public vs private repos. |
 
 ## Repository layout
 
