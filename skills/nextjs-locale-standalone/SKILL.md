@@ -3,7 +3,7 @@ name: nextjs-locale-standalone
 description: Add locale-prefixed i18n routing to a single (non-monorepo) Next.js App Router site — a middleware/proxy that redirects `/` and any unprefixed path to `/<locale>/…` using the locale toggle's last choice (the NEXT_LOCALE cookie) then the browser's Accept-Language, a `[locale]` layout with a LocaleProvider + hooks, and a LocaleToggle that persists the choice. Use when adding bilingual/multilingual routing to a standalone Next.js site, building `/en-hk/…` `/zh-hk/…` URL namespaces, redirecting the root to a default-or-remembered locale, persisting a language switch across visits, or detecting browser language in middleware. For a monorepo that shares this logic across several apps via a workspace package, use nextjs-locale-monorepo instead.
 metadata:
   author: stealth-engine
-  version: "1.0.1"
+  version: "1.0.2"
 ---
 
 # Next.js locale routing — standalone site
@@ -98,8 +98,17 @@ the guard are belt-and-suspenders.
   primary subtag.
 - **Don't redirect-loop:** only redirect when `extractLocaleFromPath` returns
   null. Prefixed paths must pass through.
-- **Locale validity in the layout:** `notFound()` for an unknown `[locale]` so
-  `/xx/...` 404s instead of rendering.
+- **Invalid locales still 404, but via a prefixed path.** The proxy can't tell an
+  unsupported first segment (`/xx/about`) from a normal page path (`/products/x`) —
+  both have a non-locale first segment — so it prefixes *both*: `/xx/about` →
+  `/en-hk/xx/about`, which 404s because no such page route exists. So a bad locale
+  still yields a 404, just under a `/<default>/…` URL rather than as a bare `/xx/…`.
+  Don't expect the proxy to leave `/xx/…` untouched. The layout's `notFound()`
+  (below) is the backstop for the cases the proxy doesn't intercept.
+- **Locale validity in the layout:** keep `notFound()` for an unknown `[locale]`
+  as defense-in-depth — it catches an invalid locale that reaches `[locale]`
+  directly (un-proxied render, an excluded matcher path) so it 404s instead of
+  rendering with a bogus `lang`.
 
 ## Verify
 
