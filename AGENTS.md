@@ -58,6 +58,25 @@ and phrases a user might say.
   skill stays useful across situations.
 - Note provenance (how a non-obvious claim was verified) when it helps trust.
 
+## Bundling files in a skill
+
+A skill is a **directory**, not just `SKILL.md`. You may ship reference docs,
+scripts, templates, or assets alongside it:
+
+```
+skills/<skill-name>/
+  SKILL.md          # entry: frontmatter + concise body
+  reference/*.md    # optional — deep detail, read on demand
+  scripts/*         # optional — runnable helpers the skill invokes
+  templates/*       # optional — boilerplate the skill copies
+```
+
+Only `SKILL.md`'s body loads when the skill fires; everything else loads/reads/
+runs **only when `SKILL.md` references it** (by relative path). Keep `SKILL.md`
+short and push heavy material into siblings. The CLI installs the whole
+directory, so relative links keep working. Small skills are fine as a single
+`SKILL.md` — split only when it gets large or needs helpers.
+
 ## Adding a skill
 
 ```bash

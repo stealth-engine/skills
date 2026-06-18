@@ -56,6 +56,35 @@ If the agent won't *match* it to the right moment, the skill is dead weight.
 - Note **provenance** for non-obvious claims (how it was verified) to earn trust.
 - One concern per skill — split rather than overload.
 
+## Bundling files in a skill (progressive disclosure)
+
+A skill is a **directory**, not just one file. `SKILL.md` is the entry point; you
+can ship reference docs, scripts, templates, and assets next to it:
+
+```
+skills/my-skill/
+  SKILL.md                 # entry: frontmatter + concise body
+  reference/
+    api.md                 # deep detail / long tables — read on demand
+  scripts/
+    init.sh                # a runnable helper the skill invokes
+  templates/
+    config.example.json    # boilerplate the skill copies
+```
+
+Only `SKILL.md`'s body loads when the skill fires; **everything else loads,
+reads, or runs only when `SKILL.md` tells the agent to**, referenced by relative
+path. Keep `SKILL.md` short and high-signal; push heavy material into siblings:
+
+```markdown
+For the full option list, read `reference/api.md`.
+Scaffold with `scripts/init.sh <name>`.
+```
+
+The CLI installs the **whole directory** (symlink or `--copy`), so relative links
+keep working. Split only when a skill gets large or needs runnable helpers — a
+small skill is perfectly fine as a single `SKILL.md`.
+
 ## Repo layout (bundling many skills)
 
 ```

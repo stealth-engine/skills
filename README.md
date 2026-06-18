@@ -42,13 +42,22 @@ Manage installed skills with `npx skills list`, `npx skills update`, and
 ```
 skills/
   <skill-name>/
-    SKILL.md        # frontmatter (name + description) + the skill body
+    SKILL.md         # entry: frontmatter (name + description) + the skill body
+    reference/*.md   # optional — deep docs the skill links to, loaded on demand
+    scripts/*        # optional — runnable helpers the skill invokes
+    templates/*      # optional — boilerplate the skill copies
 README.md
-AGENTS.md           # conventions for authoring skills in this repo
+AGENTS.md            # conventions for authoring skills in this repo
 ```
 
 The `skills` CLI auto-discovers `skills/<name>/SKILL.md` (flat) and
 `skills/<category>/<name>/SKILL.md` (categorised) — no manifest required.
+
+A skill is a **directory**, not just one file: `SKILL.md` is the entry point, and
+only its body loads when the skill fires. Anything else (reference docs, scripts,
+templates) loads/runs **only when `SKILL.md` references it** — keep `SKILL.md`
+focused and push heavy material into siblings (progressive disclosure). The whole
+directory installs together, so relative links keep working.
 
 ## Adding a skill
 
