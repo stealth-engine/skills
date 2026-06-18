@@ -3,7 +3,7 @@ name: nextjs-locale-monorepo
 description: Add locale-prefixed i18n routing across a Next.js monorepo (Turborepo / pnpm workspaces) by extracting the engine into a shared workspace package that every app consumes — locale detection + a middleware/proxy factory + a `use client` LocaleProvider/hooks, plus a shared supportedLanguages config. Each app redirects `/` and unprefixed paths to `/<locale>/…` from the toggle's last choice (the NEXT_LOCALE cookie) then the browser's Accept-Language, wiring only a thin middleware + `[locale]` layout. Use when several apps in one repo need consistent `/en-hk/…` `/zh-hk/…` routing, sharing locale logic via a workspace package instead of copy-paste, dual ESM/CJS build of a package that ships a client provider, Turbo build-ordering so the lib builds before the apps, or per-app locale wiring. For a single standalone site, use nextjs-locale-standalone instead.
 metadata:
   author: stealth-engine
-  version: "1.0.1"
+  version: "1.0.2"
 ---
 
 # Next.js locale routing — monorepo (shared package)
@@ -80,8 +80,17 @@ Use the [`templates/package/`](./templates/package) files as-is. What matters:
    export function middleware(req: NextRequest) {
      return i18n(req) ?? NextResponse.next();
    }
-   export const config = { matcher: ['/((?!_next|api|.*\\..*).*)'] };
+   export const config = { matcher: ['/((?!_next(?:/|$)|api(?:/|$)|.*\\..*).*)'] };
    ```
+
+   **Next 16:** name this thin app file `proxy.ts` and the export `proxy`
+   (`export function proxy(req)`) — the body and the shared
+   `createI18nMiddleware` factory are unchanged; only the app-level file/function
+   names follow the new convention (`npx @next/codemod middleware-to-proxy .`
+   automates it). One real caveat: **`proxy` is Node.js-only** (the `runtime`
+   config throws), whereas `middleware` could run on the edge — locale redirects
+   don't need edge, but if any app's request layer does, keep `middleware.ts`
+   there. The shared factory is runtime-agnostic, so apps can mix conventions.
 
 3. **`app/[locale]/layout.tsx`** (`templates/app-locale-layout.tsx`): validate the
    locale, `generateStaticParams` from `supportedLanguages`, and wrap children in

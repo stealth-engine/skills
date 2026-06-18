@@ -3,7 +3,7 @@ name: nextjs-locale-standalone
 description: Add locale-prefixed i18n routing to a single (non-monorepo) Next.js App Router site — a middleware/proxy that redirects `/` and any unprefixed path to `/<locale>/…` using the locale toggle's last choice (the NEXT_LOCALE cookie) then the browser's Accept-Language, a `[locale]` layout with a LocaleProvider + hooks, and a LocaleToggle that persists the choice. Use when adding bilingual/multilingual routing to a standalone Next.js site, building `/en-hk/…` `/zh-hk/…` URL namespaces, redirecting the root to a default-or-remembered locale, persisting a language switch across visits, or detecting browser language in middleware. For a monorepo that shares this logic across several apps via a workspace package, use nextjs-locale-monorepo instead.
 metadata:
   author: stealth-engine
-  version: "1.0.2"
+  version: "1.0.3"
 ---
 
 # Next.js locale routing — standalone site
@@ -68,9 +68,29 @@ Copy them from [`templates/`](./templates) and adjust `supportedLanguages`.
 
 Next 16 renamed the convention: the file is `proxy.ts` and the export is
 `export function proxy(...)`. On Next ≤15 it's `middleware.ts` /
-`export function middleware(...)` — **the body is identical**, only the file and
-function names change. Next 16 still runs a `middleware.ts` but logs a deprecation
-warning. The template ships as `proxy.ts`.
+`export function middleware(...)` — **the body of *this* template is identical**,
+only the file and function names change. **`proxy` is the go-forward direction** —
+`middleware` is deprecated; Next 16 still runs a `middleware.ts` but logs a
+deprecation warning and is positioning it as the edge-only escape hatch (below),
+not the default. So **on Next 16+ default to `proxy.ts`**; reach for
+`middleware.ts` only on Next ≤15 or when you specifically need the edge runtime.
+The template ships as `proxy.ts`. Migrate an existing
+file with `npx @next/codemod middleware-to-proxy .` (it also renames config flags
+like `skipMiddlewareUrlNormalize` → `skipProxyUrlNormalize` and types
+`NextMiddleware` → `NextProxy`).
+
+**The rename is not purely cosmetic — `proxy` is Node.js-only.** `proxy.ts`
+defaults to the **Node.js runtime and you cannot change it** — setting the
+`runtime` config in a proxy file *throws*. (Middleware historically ran on the
+**edge** runtime; Node support went stable in 15.5, and 16 made Node the locked
+default.) For this locale logic that's a non-issue — redirects, rewrites, and
+cookie stamping don't need edge. **But if you need the edge runtime, keep
+`middleware.ts`** (Next will add edge guidance for proxy in a later release).
+Conceptually Next now frames this feature as a **network boundary / gateway**, to
+be used sparingly (redirects, rewrites, header/cookie stamping, light gating) —
+not a place for app logic. Don't trust it as the *only* auth gate: a matcher
+change can silently drop coverage (including Server Functions), so verify auth in
+the route/Server Function too.
 
 The matcher excludes assets and API so they never redirect:
 
