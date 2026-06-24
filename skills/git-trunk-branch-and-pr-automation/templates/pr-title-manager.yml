@@ -49,6 +49,13 @@ jobs:
             const { owner, repo } = context.repo;
             const issue_number = pr.number;
 
+            // Fork PRs get a read-only token — the title/comment writes below would
+            // 403. Skip gracefully (the branch-name check still fails loudly).
+            if (pr.head.repo.full_name !== pr.base.repo.full_name) {
+              core.info('Fork PR: skipping title normalisation (read-only token).');
+              return;
+            }
+
             // Opt-out: leave the title alone (but warn — semantic tooling depends on it).
             if (pr.title.includes('[skip title auto pr]')) {
               core.info('Opt-out marker present; not touching the title.');

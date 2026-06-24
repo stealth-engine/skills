@@ -8,7 +8,7 @@ metadata:
 
 # Gating production deploys to real releases
 
-By default a push/merge to `main` deploys to production. With
+By default, a push/merge to `main` deploys to production. With
 [semantic-release](../semantic-release-automation/SKILL.md) you usually want the
 opposite: **previews on feature branches, but production only on an actual
 release** (a versioned `chore(release):` commit / a published GitHub Release).

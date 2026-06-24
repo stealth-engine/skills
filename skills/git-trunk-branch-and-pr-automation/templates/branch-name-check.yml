@@ -19,8 +19,9 @@ jobs:
     steps:
       - name: Check branch name
         id: check
+        env:
+          BRANCH: ${{ github.head_ref }} # via env, never inline in run: (injection)
         run: |
-          BRANCH="${{ github.head_ref }}"
           if [[ "$BRANCH" =~ ^(feature|fix|hotfix|claude|cursor|codex|copilot|codegen-bot|dependabot)/.+ ]]; then
             echo "valid=true" >> "$GITHUB_OUTPUT"
           else
@@ -54,6 +55,8 @@ jobs:
 
       - name: Fail if invalid
         if: steps.check.outputs.valid == 'false'
+        env:
+          BRANCH: ${{ github.head_ref }}
         run: |
-          echo "::error::Invalid branch name '${{ github.head_ref }}' — see the PR comment."
+          echo "::error::Invalid branch name '$BRANCH' — see the PR comment."
           exit 1

@@ -20,6 +20,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 30 # don't hold the prod-release concurrency slot if a rollout hangs
     steps:
       - uses: actions/checkout@v7
 
