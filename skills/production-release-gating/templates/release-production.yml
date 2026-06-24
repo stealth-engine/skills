@@ -1,0 +1,54 @@
+name: Production Release
+# [AUTOMATED] Deploys to production when a GitHub Release is PUBLISHED.
+#
+# The GitHub Release (created by semantic-release) is the trigger — nothing
+# deploys on a plain push to main. Use this when YOU control the deploy workflow
+# (GKE, self-hosted, any dispatchable target). For platforms that force-deploy on
+# every push (Vercel), gate with the Ignored Build Step instead (see vercel-ignore.sh).
+
+on:
+  release:
+    types: [published]
+
+concurrency:
+  group: prod-release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false # never cancel a production rollout
+
+permissions:
+  contents: write # to annotate the Release with deploy status
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Deploy to production
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
+        run: |
+          echo "Deploying $VERSION to production…"
+          # e.g. authenticate to GKE and roll out the tagged image:
+          #   gcloud container clusters get-credentials "$CLUSTER" --region "$REGION"
+          #   kubectl set image deployment/app app="$REGISTRY/app:${VERSION#v}"
+          #   kubectl rollout status deployment/app --timeout=300s
+
+      - name: Annotate the Release with deploy status
+        if: always()
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const ok = '${{ job.status }}' === 'success';
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const status = ok
+              ? `\n\n---\n\n✅ **Deployed to production** · [run](${run})`
+              : `\n\n---\n\n❌ **Production deploy failed** · [run](${run})`;
+            const { data: rel } = await github.rest.repos.getRelease({
+              owner: context.repo.owner, repo: context.repo.repo,
+              release_id: context.payload.release.id,
+            });
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner, repo: context.repo.repo,
+              release_id: context.payload.release.id,
+              body: (rel.body || '') + status,
+            });
