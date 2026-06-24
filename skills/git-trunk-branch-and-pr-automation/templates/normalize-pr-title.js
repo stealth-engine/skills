@@ -33,23 +33,27 @@ function detectFromCommits(commits = []) {
   if (!Array.isArray(commits)) return { type: null, scope: null, breaking: false };
   let best = null;
   let bestScope = null;
+  let bestRank = -1;
   let breaking = false;
   for (const c of commits) {
     const msg = c.commit?.message || c.message || '';
     const m = msg.match(/^(\w+)(?:\(([^)]+)\))?(!)?:/);
+    const isBreaking = (m && m[3] === '!') || /^BREAKING[ -]CHANGE:/m.test(msg);
+    if (isBreaking) breaking = true;
     if (m) {
       const t = m[1].toLowerCase();
       if (TYPES.includes(t)) {
-        // Carry the scope from the strongest commit so a monorepo PR (all
-        // `feat(my-app): …`) keeps its package scope in the synthesised title.
-        if (best === null || (RANK[t] || 0) > (RANK[best] || 0)) {
+        // Rank breaking commits highest so type+scope+`!` all come from the SAME
+        // (strongest) commit — else a breaking `fix(api)!:` could mis-attribute the
+        // `!` to a higher-type-but-non-breaking `feat(ui):` scope.
+        const rank = (isBreaking ? 100 : 0) + (RANK[t] || 0);
+        if (rank > bestRank) {
+          bestRank = rank;
           best = t;
           bestScope = m[2] || null;
         }
-        if (m[3] === '!') breaking = true;
       }
     }
-    if (/^BREAKING[ -]CHANGE:/m.test(msg)) breaking = true;
   }
   return { type: best, scope: bestScope, breaking };
 }
@@ -70,20 +74,31 @@ function toSubject(s) {
  */
 function processPRTitle(currentTitle, commits = [], branchName = '') {
   const title = (currentTitle || '').trim();
+  const det = detectFromCommits(commits);
+
+  // Inject the breaking `!` if commits signal a breaking change but the header
+  // doesn't already — else a `feat!:` commit under an `feat: …` title would
+  // under-release (minor instead of major) after squash.
+  const withBreaking = (header) => {
+    if (!det.breaking || /^[A-Za-z]+(\([^)]+\))?!:/.test(header)) return header;
+    return header.replace(/^([A-Za-z]+(?:\([^)]+\))?)\s*:/, '$1!:');
+  };
 
   if (CONVENTIONAL.test(title)) {
-    return { newTitle: title, changed: false, reason: 'already_valid' };
+    const fixed = withBreaking(title);
+    return fixed === title
+      ? { newTitle: title, changed: false, reason: 'already_valid' }
+      : { newTitle: fixed, changed: true, reason: 'breaking_marker' };
   }
 
-  // Conventional except for the type's casing ("Feat: …") → just lowercase the type.
+  // Conventional except for the type's casing ("Feat: …") → lowercase the type.
   if (CONVENTIONAL_I.test(title)) {
-    const fixed = title.replace(/^([A-Za-z]+)/, (t) => t.toLowerCase());
+    const fixed = withBreaking(title.replace(/^([A-Za-z]+)/, (t) => t.toLowerCase()));
     return { newTitle: fixed, changed: true, reason: 'case_correction' };
   }
 
   // Not conventional — synthesise `<type>: <subject>`. Strip any leading
   // "word(scope)!: " first so we never double-prefix (e.g. "WIP: foo", "Update: x").
-  const det = detectFromCommits(commits);
   const type = det.type || detectTypeFromBranch(branchName) || 'chore';
   const scope = det.scope ? `(${det.scope})` : ''; // keep package scope for monorepos
   const bang = det.breaking ? '!' : ''; // preserve breaking signal → major bump
