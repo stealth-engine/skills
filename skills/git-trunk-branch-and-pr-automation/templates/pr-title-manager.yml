@@ -98,7 +98,8 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const title = context.payload.pull_request.title;
+            const pr = context.payload.pull_request;
+            const title = pr.title;
             // Honour the same opt-out as the same-repo path (documented escape hatch).
             if (title.includes('[skip title auto pr]')) {
               core.info('Opt-out marker present; skipping fork title validation.');
@@ -114,5 +115,24 @@ jobs:
               core.setFailed(
                 `Fork PR title must be a lowercase Conventional Commit (e.g. "feat: …") — ` +
                 `it becomes the squash commit and we can't auto-correct a fork's title: "${title}"`
+              );
+              return;
+            }
+            // Reading commits via the API is read-only-safe (no fork code runs). If a
+            // commit is breaking but the title lacks `!`, the squash would under-release
+            // (minor/patch instead of major) — fail so the contributor adds the `!`.
+            const { owner, repo } = context.repo;
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner, repo, pull_number: pr.number, per_page: 100,
+            });
+            const commitsBreaking = commits.some((c) => {
+              const msg = c.commit?.message || '';
+              return /^\w+(\([^)]+\))?!:/.test(msg) || /^BREAKING[ -]CHANGE:/m.test(msg);
+            });
+            const titleBreaking = /^[a-z]+(\([^)]+\))?!:/.test(title);
+            if (commitsBreaking && !titleBreaking) {
+              core.setFailed(
+                `A commit is a breaking change but the title has no "!". Add it ` +
+                `(e.g. "feat!: …") so the squash merge cuts a MAJOR release: "${title}"`
               );
             }
