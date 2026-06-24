@@ -39,6 +39,7 @@ Manage installed skills with `npx skills list`, `npx skills update`, and
 | [`nextjs-locale-standalone`](./skills/nextjs-locale-standalone/SKILL.md) | Add locale-prefixed i18n routing to a single Next.js App Router site — a middleware/proxy that redirects `/` to `/<locale>/…` by the toggle's last choice (`NEXT_LOCALE` cookie) then `Accept-Language`, a `[locale]` layout + `LocaleProvider`/hooks, and a `LocaleToggle`. Ships copy-paste templates. |
 | [`nextjs-locale-monorepo`](./skills/nextjs-locale-monorepo/SKILL.md) | The same locale routing factored into a shared workspace package (Turborepo / pnpm) every app consumes — detection + a middleware factory + a `use client` provider with a dual ESM/CJS build, a shared `supportedLanguages` config, and thin per-app wiring. Ships the package + app templates. |
 | [`code-complexity-stats-pr`](./skills/code-complexity-stats-pr/SKILL.md) | A GitHub Actions workflow that runs `scc` on every PR and posts code-size + a COCOMO "cost to build" estimate as a self-updating sticky comment. Covers fork-PR token limits, runner arch, version pinning, comment pagination, and the 65k comment cap. Ships the workflow template. |
+| [`conventional-commits`](./skills/conventional-commits/SKILL.md) | The Conventional Commits / "semantic commits" format — `type(scope): description`, the type→semver mapping, breaking changes, monorepo scopes, and squash-merge PR titles — and why non-conventional messages silently skip releases. The foundation for automated versioning + changelogs. |
 
 ## Repository layout
 
