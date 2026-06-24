@@ -7,7 +7,9 @@ on:
     # `edited` so a title changed AFTER the first run is re-validated (else a
     # stale green check could merge a non-conventional title). The bot-actor
     # guard below stops this job's own title edit from looping.
-    types: [opened, reopened, synchronize, edited]
+    # `ready_for_review` because the job is gated on `draft == false`, so a PR
+    # opened as a draft must be (re)checked when it's marked ready.
+    types: [opened, reopened, synchronize, edited, ready_for_review]
 
 concurrency:
   group: pr-title-${{ github.event.pull_request.number }}
@@ -125,14 +127,18 @@ jobs:
             const commits = await github.paginate(github.rest.pulls.listCommits, {
               owner, repo, pull_number: pr.number, per_page: 100,
             });
-            const commitsBreaking = commits.some((c) => {
-              const msg = c.commit?.message || '';
-              return /^\w+(\([^)]+\))?!:/.test(msg) || /^BREAKING[ -]CHANGE:/m.test(msg);
-            });
+            const msgs = commits.map((c) => c.commit?.message || '');
+            // A `BREAKING CHANGE:` footer survives in the squash BODY and is still
+            // detected there (semantic-release reads notes from the body), so it
+            // doesn't need a title `!`. Only a bang-style break (`feat!:`) is lost on
+            // squash unless the title carries the `!`.
+            const footerBreaking = msgs.some((m) => /^BREAKING[ -]CHANGE:/m.test(m));
+            const bangBreaking = msgs.some((m) => /^\w+(\([^)]+\))?!:/.test(m));
             const titleBreaking = /^[a-z]+(\([^)]+\))?!:/.test(title);
-            if (commitsBreaking && !titleBreaking) {
+            if (bangBreaking && !footerBreaking && !titleBreaking) {
               core.setFailed(
-                `A commit is a breaking change but the title has no "!". Add it ` +
-                `(e.g. "feat!: …") so the squash merge cuts a MAJOR release: "${title}"`
+                `A commit is breaking (\`type!:\`) but the title has no "!" and there's ` +
+                `no BREAKING CHANGE footer to survive the squash. Add "!" (e.g. ` +
+                `"feat!: …") so the merge cuts a MAJOR release: "${title}"`
               );
             }
