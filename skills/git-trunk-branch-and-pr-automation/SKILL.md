@@ -60,11 +60,12 @@ checks (plus your release/CI checks) before a PR can merge.
 
 ## Gotchas
 
-- **Skip bot-authored PRs.** The template guards with an actor check
-  (`github.actor == *[bot]*` → skip) so it doesn't rewrite/churn titles on bot PRs
-  like dependabot (whose titles are already conventional). (Editing a title fires
-  the `edited` event, which isn't a trigger here, so there's no title-edit loop —
-  the guard is about not fighting bots, not preventing a cascade.)
+- **Skip bot-authored PRs, and don't loop on your own edits.** The template guards
+  with a bash actor check (`[[ "$ACTOR" == *"[bot]"* ]]` → skip) so it doesn't
+  rewrite/churn titles on bot PRs like dependabot. This matters because the workflow
+  *does* listen for the `edited` event (so a human title change is re-validated) —
+  and when the job edits the title itself, that `edited` event re-fires as
+  `github-actions[bot]`, which the guard skips. So edits are caught without looping.
 - **Agent/bot branch prefixes don't infer a type.** `claude/ cursor/ codex/ …`
   are valid branch names, but the normaliser derives the type from the PR's
   **commits** (which should be conventional), not the prefix — falling back to

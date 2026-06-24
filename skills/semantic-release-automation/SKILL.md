@@ -98,7 +98,11 @@ The workflow detects **which packages changed** with `dorny/paths-filter` and ru
         - run: npm ci
         - working-directory: ${{ matrix.pkg }} # filter key == package dir
           env: { GITHUB_TOKEN: '${{ secrets.GH_TOKEN || github.token }}' }
-          run: npx semantic-release
+          # An earlier matrix job may have pushed its release commit; rebase + retry
+          # so this job isn't behind main when it pushes its own tag.
+          run: |
+            git pull --rebase origin main || true
+            npx semantic-release || { git pull --rebase origin main; npx semantic-release; }
   ```
 
   `dorny/paths-filter` emits `changes` as a JSON array of the matched filter keys;
@@ -143,8 +147,10 @@ no release branch needed. For continuous prereleases, add a `next`/`beta` branch
   `exec` bump must all come **before** `git` — `git` commits the files they
   produce/bump, so a wrong order commits a stale `CHANGELOG.md`/`package.json`.
 - **`EMISMATCHGITHUBURL` after an org/repo rename** — `package.json`'s `repository`
-  field desyncs from the live URL. Pass `--repository-url "https://github.com/${GITHUB_REPOSITORY}.git"`
-  (the template does).
+  field desyncs from the live URL. Pass
+  `--repository-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"` (the template
+  does — `GITHUB_SERVER_URL` rather than a hard-coded `github.com` keeps it working
+  on GitHub Enterprise Server).
 - **Nothing published?** Check: was the merged commit/PR-title a *releasable* type
   (`feat`/`fix`/breaking, not `chore`)? Is `fetch-depth: 0` set? Is the branch in
   `branches`? A non-conventional title silently yields no release.

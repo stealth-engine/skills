@@ -24,20 +24,28 @@ const BRANCH_TYPE = {
   perf: 'perf', test: 'test', ci: 'ci', build: 'build',
 };
 
-const RANK = { feat: 2, fix: 1 }; // highest-impact type wins
+const RANK = { feat: 2, fix: 1, perf: 1 }; // release-signalling types; others = 0 (no release)
 
-function detectTypeFromCommits(commits = []) {
-  if (!Array.isArray(commits)) return null;
+// Returns the strongest release-signalling type across the commits, plus whether
+// any commit is breaking (`!` or a `BREAKING CHANGE`/`BREAKING-CHANGE` footer) — so
+// the synthesised title can carry the `!` and not under-release after squash.
+function detectFromCommits(commits = []) {
+  if (!Array.isArray(commits)) return { type: null, breaking: false };
   let best = null;
+  let breaking = false;
   for (const c of commits) {
     const msg = c.commit?.message || c.message || '';
-    const m = msg.match(/^(\w+)(\([^)]+\))?!?:/);
-    if (!m) continue;
-    const t = m[1].toLowerCase();
-    if (!TYPES.includes(t)) continue;
-    if (best === null || (RANK[t] || 0) > (RANK[best] || 0)) best = t;
+    const m = msg.match(/^(\w+)(\([^)]+\))?(!)?:/);
+    if (m) {
+      const t = m[1].toLowerCase();
+      if (TYPES.includes(t)) {
+        if (best === null || (RANK[t] || 0) > (RANK[best] || 0)) best = t;
+        if (m[3] === '!') breaking = true;
+      }
+    }
+    if (/^BREAKING[ -]CHANGE:/m.test(msg)) breaking = true;
   }
-  return best;
+  return { type: best, breaking };
 }
 
 function detectTypeFromBranch(branchName = '') {
@@ -69,8 +77,9 @@ function processPRTitle(currentTitle, commits = [], branchName = '') {
 
   // Not conventional — synthesise `<type>: <subject>`. Strip any leading
   // "word(scope)!: " first so we never double-prefix (e.g. "WIP: foo", "Update: x").
-  const type =
-    detectTypeFromCommits(commits) || detectTypeFromBranch(branchName) || 'chore';
+  const det = detectFromCommits(commits);
+  const type = det.type || detectTypeFromBranch(branchName) || 'chore';
+  const bang = det.breaking ? '!' : ''; // preserve breaking signal → major bump
   // Strip ONLY a leading real-type prefix (case-insensitive) so a mis-cased
   // "Feat: x" doesn't double-prefix, while a descriptive "Note: x" keeps its text.
   const stripped = title.replace(
@@ -78,7 +87,7 @@ function processPRTitle(currentTitle, commits = [], branchName = '') {
     ''
   );
   const subject = toSubject(stripped || title) || 'update';
-  return { newTitle: `${type}: ${subject}`, changed: true, reason: 'format_correction' };
+  return { newTitle: `${type}${bang}: ${subject}`, changed: true, reason: 'format_correction' };
 }
 
 module.exports = { processPRTitle, TYPES, CONVENTIONAL };

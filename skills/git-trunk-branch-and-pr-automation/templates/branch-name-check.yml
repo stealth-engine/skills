@@ -28,14 +28,31 @@ jobs:
             echo "valid=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Comment if invalid
-        if: steps.check.outputs.valid == 'false'
+      # Only same-repo PRs: a fork's read-only token would 403 on the comment,
+      # turning a validation failure into a confusing permissions failure. (Forks
+      # still fail the "Fail if invalid" step below — they just get no comment.)
+      - name: Update status comment
+        if: github.event.pull_request.head.repo.full_name == github.event.pull_request.base.repo.full_name
         uses: actions/github-script@v9
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          VALID: ${{ steps.check.outputs.valid }}
         with:
           script: |
             const marker = '<!-- branch-name-check -->';
             const branch = process.env.HEAD_REF;
-            const body = `${marker}
+            const valid = process.env.VALID === 'true';
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number, per_page: 100 });
+            const existing = comments.find((c) => c.body?.includes(marker));
+
+            // Valid + no prior comment → stay quiet. Valid + prior comment → clear
+            // the stale warning. Invalid → post/refresh the warning.
+            if (valid && !existing) return;
+            const body = valid
+              ? `${marker}\n## 🌿 Branch name OK\n\n\`${branch}\` follows the convention.`
+              : `${marker}
             ## 🌿 Invalid branch name
 
             \`${branch}\` must start with one of:
@@ -44,14 +61,8 @@ jobs:
             - or an AI-agent prefix: \`claude/\` \`cursor/\` \`codex/\` \`copilot/\` \`codegen-bot/\` \`dependabot/\`
 
             e.g. \`feature/add-locale-toggle\`.`;
-            const { owner, repo } = context.repo;
-            const issue_number = context.issue.number;
-            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number, per_page: 100 });
-            const existing = comments.find((c) => c.body?.includes(marker));
             if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
             else await github.rest.issues.createComment({ owner, repo, issue_number, body });
-        env:
-          HEAD_REF: ${{ github.head_ref }}
 
       - name: Fail if invalid
         if: steps.check.outputs.valid == 'false'

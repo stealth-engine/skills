@@ -46,4 +46,5 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }} # only needed if publishing to npm
         # Pass the live repo URL so an org/name rename can't desync it from
         # package.json's repository field (avoids EMISMATCHGITHUBURL).
-        run: npx semantic-release --repository-url "https://github.com/${GITHUB_REPOSITORY}.git"
+        # GITHUB_SERVER_URL (not hard-coded github.com) keeps this portable on GHES.
+        run: npx semantic-release --repository-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
