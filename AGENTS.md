@@ -86,6 +86,19 @@ npx skills init skills/<skill-name>   # scaffolds the folder + SKILL.md
 Then fill in the frontmatter + body, add a row to the **Skills** table in
 `README.md`, and commit.
 
+## Branching & pull requests
+
+This repo uses a **feature-branch + PR** workflow. Do **not** commit directly to
+`main`.
+
+- **Branch per change:** `feature/<kebab-desc>` off `main` (e.g.
+  `feature/conventional-commits`). Build larger work in a git **worktree** so each
+  change stays isolated.
+- **Open a PR** with a **Conventional Commits title** — it becomes the squash-merge
+  commit message, so it must be semantic (`feat(skill): …`, `docs: …`, `fix: …`).
+- **Squash merge** to `main` (one PR = one commit on `main`).
+- **Don't self-merge:** leave the PR for review and **ask before merging**.
+
 ## Conventions
 
 - One concern per skill. Split rather than overload.
