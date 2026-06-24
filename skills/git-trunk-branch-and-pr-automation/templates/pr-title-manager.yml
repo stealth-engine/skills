@@ -23,8 +23,10 @@ jobs:
       # conventional, and we don't want to rewrite/churn them.
       - name: Guard against bot actors
         id: guard
+        env:
+          ACTOR: ${{ github.actor }} # via env, never inline in run:
         run: |
-          if [[ "${{ github.actor }}" == *"[bot]"* ]]; then
+          if [[ "$ACTOR" == *"[bot]"* ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"

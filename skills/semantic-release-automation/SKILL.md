@@ -151,6 +151,12 @@ no release branch needed. For continuous prereleases, add a `next`/`beta` branch
 - **`NPM_TOKEN`** needs publish rights (and 2FA set to "automation"/auth-token, not
   OTP) for `@semantic-release/npm`.
 - **Don't hand-write `chore(release):` commits** — they're the bot's output.
+- **The `git` plugin pushes the release commit straight to `main`.** That's by
+  design — release automation is the one sanctioned committer to `main` (it bypasses
+  the feature-branch + PR rule that applies to humans). If `main` has branch
+  protection requiring PRs/reviews, give the release token (a bot/PAT) **bypass**
+  permission, or drop `@semantic-release/git` and run **tag-only** (no
+  changelog/version commit back — you lose the in-repo `CHANGELOG.md` bump).
 
 ## Verify
 
