@@ -1,6 +1,6 @@
 ---
 name: production-release-gating
-description: "Stop every push/merge to main from shipping to production — deploy only on a real release. Use when a merge to main unexpectedly deploys to prod, when you want production to deploy only on a semantic-release version (not every commit), when setting up preview-on-feature-branch but gated-prod-on-main, wiring a Vercel Ignored Build Step / `ignoreCommand`, or triggering a deploy from a published GitHub Release (GKE, self-hosted, dispatchable targets). Covers the two patterns — release-event-driven deploy (`on: release: published`) and the Vercel `ignoreCommand` script — when to use which, branch-aware previews, and monorepo dependency-release handling."
+description: "Stop every push/merge to main from shipping to production — deploy only on a real release. Use when a merge to main unexpectedly deploys to prod, when you want production to deploy only on a semantic-release version (not every commit), when setting up preview-on-feature-branch but gated-prod-on-main, wiring a Vercel Ignored Build Step / `ignoreCommand`, or triggering a deploy from a published GitHub Release (GKE, self-hosted, dispatchable targets). Covers the two patterns — release-event-driven deploy (`on: release`, `types: [published]`) and the Vercel `ignoreCommand` script — when to use which, branch-aware previews, and monorepo dependency-release handling."
 metadata:
   author: stealth-engine
   version: "1.0.0"
@@ -26,8 +26,8 @@ Otherwise (you own the deploy workflow) → Pattern A — it's the cleaner model
 
 ## Pattern A — deploy on a published Release
 
-semantic-release creates a GitHub Release; this workflow fires on
-`on: release: [published]` and rolls out `github.event.release.tag_name`, then
+semantic-release creates a GitHub Release; this workflow fires on `on: release`
+with `types: [published]` and rolls out `github.event.release.tag_name`, then
 writes the deploy status back onto the Release body. Plain pushes to `main` deploy
 nothing.
 
@@ -79,8 +79,9 @@ commented in the template) so an app redeploys when its shared lib version bumps
 
 ## Sources
 
-- Generalised from production repos: `cphk` (Pattern A — `on: release: published`
-  dispatches a GKE deploy and annotates the Release with status) and `piaf-monorepo`
+- Generalised from production repos: `cphk` (Pattern A — `on: release` /
+  `types: [published]` dispatches a GKE deploy and annotates the Release with status)
+  and `piaf-monorepo`
   (Pattern B — per-app `vercel.json` `ignoreCommand` → `vercel-ignore-<app>.sh` with
   branch/release/dependency-aware exit codes).
 - Vercel Ignored Build Step: <https://vercel.com/docs/projects/overview#ignored-build-step>

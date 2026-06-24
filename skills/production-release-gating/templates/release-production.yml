@@ -40,15 +40,20 @@ jobs:
           script: |
             const ok = '${{ job.status }}' === 'success';
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const marker = '<!-- deploy-status -->';
             const status = ok
-              ? `\n\n---\n\n✅ **Deployed to production** · [run](${run})`
-              : `\n\n---\n\n❌ **Production deploy failed** · [run](${run})`;
+              ? `\n\n${marker}\n✅ **Deployed to production** · [run](${run})`
+              : `\n\n${marker}\n❌ **Production deploy failed** · [run](${run})`;
             const { data: rel } = await github.rest.repos.getRelease({
               owner: context.repo.owner, repo: context.repo.repo,
               release_id: context.payload.release.id,
             });
+            // Replace a prior status block (idempotent across re-runs) instead of stacking.
+            const cleaned = (rel.body || '').replace(
+              new RegExp(`\\n\\n${marker}[\\s\\S]*$`), ''
+            );
             await github.rest.repos.updateRelease({
               owner: context.repo.owner, repo: context.repo.repo,
               release_id: context.payload.release.id,
-              body: (rel.body || '') + status,
+              body: cleaned + status,
             });

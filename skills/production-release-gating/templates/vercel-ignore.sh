@@ -24,10 +24,12 @@ if [[ "$BRANCH" != "main" ]]; then echo "[BUILD] preview branch"; exit 1; fi
 # --- On main: strict. Only release commits or an explicit deploy marker. ---
 if [[ "$MSG" == *"[deploy]"* ]]; then echo "[BUILD] deploy marker"; exit 1; fi
 
-# semantic-release commit. Match BOTH flavors:
-#   single-package: "chore(release): 1.2.3"   (release is the scope)
-#   monorepo:       "chore(my-app): release 1.2.3 [skip ci]"   (release follows the colon)
-if [[ "$MSG" =~ ^chore\(release\): ]] || [[ "$MSG" =~ ^chore\(.+\):\ release ]]; then
+# semantic-release commit. Match BOTH flavors, and REQUIRE a SemVer version so a
+# human "chore(docs): release notes for v2" can't accidentally trigger prod:
+#   single-package: "chore(release): 1.2.3"            (release is the scope)
+#   monorepo:       "chore(my-app): release 1.2.3 …"   (release follows the colon)
+if [[ "$MSG" =~ ^chore\(release\):\ v?[0-9]+\.[0-9]+\.[0-9]+ ]] \
+   || [[ "$MSG" =~ ^chore\(.+\):\ release\ v?[0-9]+\.[0-9]+\.[0-9]+ ]]; then
   echo "[BUILD] release commit"; exit 1
 fi
 

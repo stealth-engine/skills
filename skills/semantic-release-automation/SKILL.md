@@ -125,7 +125,7 @@ Use [`templates/release.yml`](./templates/release.yml). Non-negotiables:
 - **Token:** the built-in `GITHUB_TOKEN` works for tags/Releases, but commits it
   makes **won't trigger other workflows**. If a release must kick off a downstream
   deploy via `on: push`/`on: release`, use a **PAT/bot `GH_TOKEN`**. (See
-  `production-release-gating` for the `on: release: published` pattern, which sidesteps this.)
+  `production-release-gating` for the `on: release` (`types: [published]`) pattern, which sidesteps this.)
 
 ## Pool commits into fewer releases
 
