@@ -74,7 +74,7 @@ The workflow detects **which packages changed** with `dorny/paths-filter` and ru
       outputs:
         changed: ${{ steps.f.outputs.changes }}
       steps:
-        - uses: actions/checkout@v5
+        - uses: actions/checkout@v7
         - id: f
           uses: dorny/paths-filter@v3
           with:
@@ -91,9 +91,9 @@ The workflow detects **which packages changed** with `dorny/paths-filter` and ru
           pkg: ${{ fromJson(needs.detect.outputs.changed) }}
       runs-on: ubuntu-latest
       steps:
-        - uses: actions/checkout@v5
+        - uses: actions/checkout@v7
           with: { fetch-depth: 0 }
-        - uses: actions/setup-node@v5
+        - uses: actions/setup-node@v6
           with: { node-version: lts/*, cache: npm }
         - run: npm ci
         - working-directory: ${{ matrix.pkg }} # filter key == package dir
@@ -139,9 +139,9 @@ no release branch needed. For continuous prereleases, add a `next`/`beta` branch
 ## Gotchas
 
 - **Plugin order is the pipeline.** `commit-analyzer` → `notes` → `changelog` →
-  `npm` → `git` → `github`. Both `changelog` **and** `npm` must come **before**
-  `git` — `git` commits the files they produce/bump, so a wrong order commits a
-  stale `CHANGELOG.md`/`package.json`.
+  `npm` → `git` → `github`. `changelog`, `npm`, and (in the monorepo flavor) the
+  `exec` bump must all come **before** `git` — `git` commits the files they
+  produce/bump, so a wrong order commits a stale `CHANGELOG.md`/`package.json`.
 - **`EMISMATCHGITHUBURL` after an org/repo rename** — `package.json`'s `repository`
   field desyncs from the live URL. Pass `--repository-url "https://github.com/${GITHUB_REPOSITORY}.git"`
   (the template does).

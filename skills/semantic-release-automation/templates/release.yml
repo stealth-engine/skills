@@ -26,14 +26,14 @@ jobs:
     if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0 # REQUIRED: semantic-release needs full history + tags
           persist-credentials: false # use the token below, not the checkout token
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v6
         with:
-          node-version: lts/* # current LTS; semantic-release needs Node >= 20.8.1
+          node-version: lts/* # current LTS; satisfies semantic-release's Node >= 22.14.0
           cache: npm
 
       - run: npm ci

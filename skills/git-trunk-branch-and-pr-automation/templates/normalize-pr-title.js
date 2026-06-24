@@ -27,6 +27,7 @@ const BRANCH_TYPE = {
 const RANK = { feat: 2, fix: 1 }; // highest-impact type wins
 
 function detectTypeFromCommits(commits = []) {
+  if (!Array.isArray(commits)) return null;
   let best = null;
   for (const c of commits) {
     const msg = c.commit?.message || c.message || '';

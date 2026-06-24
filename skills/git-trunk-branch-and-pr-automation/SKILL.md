@@ -53,7 +53,7 @@ Configure the repo so a merge collapses to one clean, semantic commit:
 - **`[skip title auto pr]`** opts out (warned, not recommended).
 - It posts a **sticky comment** explaining the squash convention.
 - Install the script at `.github/scripts/normalize-pr-title.js`; the workflow
-  `sparse-checkout`s just that path.
+  `sparse-checkout`s the `.github/scripts` directory to load it.
 
 Pair it with `branch-name-check.yml`, and in **branch protection** require both
 checks (plus your release/CI checks) before a PR can merge.
