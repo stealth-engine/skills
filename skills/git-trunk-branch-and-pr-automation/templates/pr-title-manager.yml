@@ -100,7 +100,10 @@ jobs:
           script: |
             const title = context.payload.pull_request.title;
             const TYPES = ['feat','fix','docs','style','refactor','perf','test','build','ci','chore','revert'];
-            const conventional = new RegExp(`^(${TYPES.join('|')})(\\([^)]+\\))?!?: .+`);
+            // Case-insensitive, to match the same-repo path's leniency (it lowercases
+            // mis-cased types). We can't auto-edit a fork title, so the merger should
+            // normalise the case in the squash commit message at merge time.
+            const conventional = new RegExp(`^(${TYPES.join('|')})(\\([^)]+\\))?!?: .+`, 'i');
             if (!conventional.test(title)) {
               core.setFailed(
                 `Fork PR title must be a Conventional Commit (it becomes the squash commit): "${title}"`

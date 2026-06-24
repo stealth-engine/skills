@@ -30,22 +30,28 @@ const RANK = { feat: 2, fix: 1, perf: 1 }; // release-signalling types; others =
 // any commit is breaking (`!` or a `BREAKING CHANGE`/`BREAKING-CHANGE` footer) — so
 // the synthesised title can carry the `!` and not under-release after squash.
 function detectFromCommits(commits = []) {
-  if (!Array.isArray(commits)) return { type: null, breaking: false };
+  if (!Array.isArray(commits)) return { type: null, scope: null, breaking: false };
   let best = null;
+  let bestScope = null;
   let breaking = false;
   for (const c of commits) {
     const msg = c.commit?.message || c.message || '';
-    const m = msg.match(/^(\w+)(\([^)]+\))?(!)?:/);
+    const m = msg.match(/^(\w+)(?:\(([^)]+)\))?(!)?:/);
     if (m) {
       const t = m[1].toLowerCase();
       if (TYPES.includes(t)) {
-        if (best === null || (RANK[t] || 0) > (RANK[best] || 0)) best = t;
+        // Carry the scope from the strongest commit so a monorepo PR (all
+        // `feat(my-app): …`) keeps its package scope in the synthesised title.
+        if (best === null || (RANK[t] || 0) > (RANK[best] || 0)) {
+          best = t;
+          bestScope = m[2] || null;
+        }
         if (m[3] === '!') breaking = true;
       }
     }
     if (/^BREAKING[ -]CHANGE:/m.test(msg)) breaking = true;
   }
-  return { type: best, breaking };
+  return { type: best, scope: bestScope, breaking };
 }
 
 function detectTypeFromBranch(branchName = '') {
@@ -79,6 +85,7 @@ function processPRTitle(currentTitle, commits = [], branchName = '') {
   // "word(scope)!: " first so we never double-prefix (e.g. "WIP: foo", "Update: x").
   const det = detectFromCommits(commits);
   const type = det.type || detectTypeFromBranch(branchName) || 'chore';
+  const scope = det.scope ? `(${det.scope})` : ''; // keep package scope for monorepos
   const bang = det.breaking ? '!' : ''; // preserve breaking signal → major bump
   // Strip ONLY a leading real-type prefix (case-insensitive) so a mis-cased
   // "Feat: x" doesn't double-prefix, while a descriptive "Note: x" keeps its text.
@@ -87,7 +94,11 @@ function processPRTitle(currentTitle, commits = [], branchName = '') {
     ''
   );
   const subject = toSubject(stripped || title) || 'update';
-  return { newTitle: `${type}${bang}: ${subject}`, changed: true, reason: 'format_correction' };
+  return {
+    newTitle: `${type}${scope}${bang}: ${subject}`,
+    changed: true,
+    reason: 'format_correction',
+  };
 }
 
 module.exports = { processPRTitle, TYPES, CONVENTIONAL };
