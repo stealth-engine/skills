@@ -60,21 +60,25 @@ checks (plus your release/CI checks) before a PR can merge.
 
 ## Gotchas
 
-- **Skip bot-authored PRs, and don't loop on your own edits.** The template guards
-  with a bash actor check (`[[ "$ACTOR" == *"[bot]"* ]]` → skip) so it doesn't
-  rewrite/churn titles on bot PRs like dependabot. This matters because the workflow
-  *does* listen for the `edited` event (so a human title change is re-validated) —
-  and when the job edits the title itself, that `edited` event re-fires as
-  `github-actions[bot]`, which the guard skips. So edits are caught without looping.
+- **Three modes — and don't loop on your own edits.** The template classifies each
+  PR: `skip` only for **`github-actions[bot]`** (its *own* title edits — the workflow
+  listens for `edited` to re-validate human changes, and skipping its own identity is
+  what stops the loop); `validate` for **forks and other bots like dependabot**
+  (read-only/untrusted → title is checked but never auto-edited); `normalize` for
+  same-repo human PRs (run the script + fix the title). Don't blanket-skip all bots —
+  a non-self bot with a non-conventional title would otherwise merge unchecked.
 - **Agent/bot branch prefixes don't infer a type.** `claude/ cursor/ codex/ …`
   are valid branch names, but the normaliser derives the type from the PR's
   **commits** (which should be conventional), not the prefix — falling back to
   `chore` only if neither title nor commits are conventional. Keep agent commits
   conventional so the bump is right.
-- **Fork PRs:** `pull_request` from a fork gets a **read-only** token, so the bot
-  can't edit the title or comment. Same-repo branches (the norm for this workflow)
-  are fine; for forks, validate-only (fail the check) rather than auto-edit, or use
-  a `pull_request_target` job that does **not** check out fork code.
+- **Fork / bot PRs are validate-only.** `pull_request` from a fork gets a
+  **read-only** token *and* an attacker-controlled checkout, so the template never
+  checks out or runs the (PR-modifiable) script for them — it validates the title
+  inline via the API (read-only) and **fails** if it isn't a releasing Conventional
+  Commit. Same-repo human branches (the norm for this trunk-based workflow) are the
+  only ones auto-edited. Configure dependabot with a conventional
+  `commit-message.prefix` so its titles pass.
 - **Squash settings are per-repo and easy to miss** — if "Default commit message"
   is left as "Default" (the first commit's message) instead of **"Pull request
   title and commit details"**, your carefully-named PR title is ignored at merge.

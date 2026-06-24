@@ -24,29 +24,37 @@ jobs:
       issues: write
       contents: read
     steps:
-      - name: Classify the PR (bot? fork?)
+      - name: Classify the PR → mode
         id: ctx
         env:
           ACTOR: ${{ github.actor }} # via env, never inline in run: (injection)
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           BASE_REPO: ${{ github.event.pull_request.base.repo.full_name }}
         run: |
-          # Skip bot-authored PRs (e.g. dependabot) — titles already conventional.
-          [[ "$ACTOR" == *"[bot]"* ]] && echo "skip=true" >> "$GITHUB_OUTPUT" || echo "skip=false" >> "$GITHUB_OUTPUT"
-          # Fork PRs run with a read-only token AND their checkout is attacker-
-          # controlled — so we must NOT check out / execute their script.
-          [[ "$HEAD_REPO" != "$BASE_REPO" ]] && echo "fork=true" >> "$GITHUB_OUTPUT" || echo "fork=false" >> "$GITHUB_OUTPUT"
+          # mode = skip | validate | normalize
+          #  - skip:      our OWN title edits, to avoid an infinite edit loop.
+          #  - validate:  forks (untrusted checkout + read-only token) AND other bots
+          #               like dependabot (read-only token, often non-conventional
+          #               titles) — check only, never check out fork code or write.
+          #  - normalize: same-repo human PRs — safe to run the script and edit.
+          mode=normalize
+          if [[ "$ACTOR" == "github-actions[bot]" ]]; then
+            mode=skip
+          elif [[ "$HEAD_REPO" != "$BASE_REPO" || "$ACTOR" == *"[bot]"* ]]; then
+            mode=validate
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
 
-      # SAME-REPO ONLY: it is safe to check out and run the (PR-modifiable) script.
+      # NORMALIZE (same-repo human) ONLY: safe to check out + run the PR-modifiable script.
       - name: Checkout the shared script
-        if: steps.ctx.outputs.skip == 'false' && steps.ctx.outputs.fork == 'false'
+        if: steps.ctx.outputs.mode == 'normalize'
         uses: actions/checkout@v7
         with:
           sparse-checkout: |
             .github/scripts
 
       - name: Normalise PR title (same-repo)
-        if: steps.ctx.outputs.skip == 'false' && steps.ctx.outputs.fork == 'false'
+        if: steps.ctx.outputs.mode == 'normalize'
         uses: actions/github-script@v9
         with:
           script: |
@@ -92,11 +100,12 @@ jobs:
             if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
             else await github.rest.issues.createComment({ owner, repo, issue_number, body });
 
-      # FORK PRs: can't run their script (untrusted) or write (read-only token).
-      # Validate the title INLINE (no checkout, no fork code) and FAIL if it isn't
-      # a Conventional Commit — so a fork can't merge a non-releasing title.
-      - name: Validate fork PR title (read-only, no fork code)
-        if: steps.ctx.outputs.skip == 'false' && steps.ctx.outputs.fork == 'true'
+      # VALIDATE-ONLY (forks + non-self bots like dependabot): can't run their script
+      # (untrusted) or write (read-only token). Validate the title INLINE (no checkout,
+      # no fork code) and FAIL if it isn't a Conventional Commit — so neither a fork
+      # nor a bot can merge a non-releasing title.
+      - name: Validate PR title (read-only, no checked-out code)
+        if: steps.ctx.outputs.mode == 'validate'
         uses: actions/github-script@v9
         with:
           script: |
