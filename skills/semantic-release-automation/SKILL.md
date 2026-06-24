@@ -60,11 +60,50 @@ The workflow detects **which packages changed** with `dorny/paths-filter` and ru
   real package name — otherwise every package shares one tag and the deploy gate
   can't match the scope. The template's `exec` step bumps `package.json` **inline**
   (no external script to create); swap in a script only if you need extra prepare
-  steps.
-- **The matrix workflow isn't shipped as a template.** [`templates/release.yml`](./templates/release.yml)
-  is the single-package one; for a monorepo, wrap that same `semantic-release` call
-  in a `dorny/paths-filter` → matrix job (`max-parallel: 1`, `git pull --rebase`
-  retry). See `piaf-monorepo`'s `release.yml` for a full example.
+  steps. (It reserialises `package.json` with 2-space indent — if your repo uses
+  other formatting, use a script or a targeted replace to avoid a noisy diff.)
+- **The shipped [`templates/release.yml`](./templates/release.yml) is
+  single-package.** For a monorepo, wrap that same `semantic-release` call in a
+  `dorny/paths-filter` → matrix job (`max-parallel: 1` + a `git pull --rebase` retry
+  so concurrent tag pushes don't collide):
+
+  ```yaml
+  jobs:
+    detect: # which packages changed?
+      runs-on: ubuntu-latest
+      outputs:
+        changed: ${{ steps.f.outputs.changes }}
+      steps:
+        - uses: actions/checkout@v5
+        - id: f
+          uses: dorny/paths-filter@v3
+          with:
+            filters: | # name each key after the package's directory
+              apps/web: ['apps/web/**']
+              packages/lib: ['packages/lib/**']
+    release:
+      needs: detect
+      if: ${{ needs.detect.outputs.changed != '[]' }}
+      strategy:
+        max-parallel: 1
+        fail-fast: false
+        matrix:
+          pkg: ${{ fromJson(needs.detect.outputs.changed) }}
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v5
+          with: { fetch-depth: 0 }
+        - uses: actions/setup-node@v5
+          with: { node-version: lts/*, cache: npm }
+        - run: npm ci
+        - working-directory: ${{ matrix.pkg }} # filter key == package dir
+          env: { GITHUB_TOKEN: '${{ secrets.GH_TOKEN || github.token }}' }
+          run: npx semantic-release
+  ```
+
+  `dorny/paths-filter` emits `changes` as a JSON array of the matched filter keys;
+  naming each key after the package dir lets `working-directory: ${{ matrix.pkg }}`
+  resolve. Each package uses its own `.releaserc` (above).
 - **Which package releases** comes from changed **file paths** (paths-filter), and
   the bump from the commit/PR-title **type**. Keep a PR to **one package** so the
   squash commit maps cleanly. For strict per-package *commit attribution*, add

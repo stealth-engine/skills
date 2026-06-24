@@ -70,7 +70,12 @@ function processPRTitle(currentTitle, commits = [], branchName = '') {
   // "word(scope)!: " first so we never double-prefix (e.g. "WIP: foo", "Update: x").
   const type =
     detectTypeFromCommits(commits) || detectTypeFromBranch(branchName) || 'chore';
-  const stripped = title.replace(/^[A-Za-z]+(\([^)]+\))?!?:\s*/, '');
+  // Strip ONLY a leading real-type prefix (case-insensitive) so a mis-cased
+  // "Feat: x" doesn't double-prefix, while a descriptive "Note: x" keeps its text.
+  const stripped = title.replace(
+    new RegExp(`^(${TYPES.join('|')})(\\([^)]+\\))?!?:\\s*`, 'i'),
+    ''
+  );
   const subject = toSubject(stripped || title) || 'update';
   return { newTitle: `${type}: ${subject}`, changed: true, reason: 'format_correction' };
 }

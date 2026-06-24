@@ -34,7 +34,8 @@ jobs:
         if: steps.guard.outputs.skip == 'false'
         uses: actions/checkout@v5
         with:
-          sparse-checkout: .github/scripts
+          sparse-checkout: |
+            .github/scripts
 
       - name: Normalise PR title
         if: steps.guard.outputs.skip == 'false'
