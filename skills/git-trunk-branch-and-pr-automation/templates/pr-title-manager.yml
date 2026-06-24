@@ -1,0 +1,83 @@
+name: PR Title Manager
+# [AUTOMATED] Normalises the PR title to Conventional Commits so the squash-merge
+# commit (PR title + concatenated commits) drives versioning/changelog cleanly.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  manage-title:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
+      contents: read
+    steps:
+      # Prevent cascades: a bot editing the title would re-trigger this workflow.
+      - name: Guard against bot actors
+        id: guard
+        run: |
+          if [[ "${{ github.actor }}" == *"[bot]"* ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout the shared script
+        if: steps.guard.outputs.skip == 'false'
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: Normalise PR title
+        if: steps.guard.outputs.skip == 'false'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { processPRTitle } = require(
+              `${process.env.GITHUB_WORKSPACE}/.github/scripts/normalize-pr-title.js`
+            );
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+            const issue_number = pr.number;
+
+            // Opt-out: leave the title alone (but warn — semantic tooling depends on it).
+            if (pr.title.includes('[skip title auto pr]')) {
+              core.info('Opt-out marker present; not touching the title.');
+              return;
+            }
+
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner, repo, pull_number: issue_number, per_page: 100,
+            });
+            const { newTitle, changed } = processPRTitle(pr.title, commits, pr.head.ref);
+
+            if (changed && newTitle !== pr.title) {
+              await github.rest.pulls.update({ owner, repo, pull_number: issue_number, title: newTitle });
+              core.info(`PR title → ${newTitle}`);
+            }
+
+            // Sticky comment explaining the convention (upserted).
+            const marker = '<!-- pr-title-manager -->';
+            const body = `${marker}
+            ## 🤖 PR title (Conventional Commits)
+
+            **Title:** \`${newTitle}\`
+
+            Because we **squash-merge**, this title becomes the commit message on \`main\`
+            (the individual commits become its body), so it must be a Conventional Commit —
+            that's what drives automated versioning and the changelog.
+
+            Opt out with \`[skip title auto pr]\` (not recommended).`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const existing = comments.find((c) => c.body?.includes(marker));
+            if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number, body });
