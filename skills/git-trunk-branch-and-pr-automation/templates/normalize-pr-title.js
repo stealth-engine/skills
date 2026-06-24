@@ -9,8 +9,14 @@ const TYPES = [
 
 // A valid Conventional Commit header: type(scope)!: subject
 const CONVENTIONAL = new RegExp(`^(${TYPES.join('|')})(\\([^)]+\\))?!?: .+`);
+// Case-insensitive variant — to detect a title that IS conventional but mis-cased
+// (e.g. "Feat: …"), so we just fix the case instead of double-prefixing it.
+const CONVENTIONAL_I = new RegExp(`^(${TYPES.join('|')})(\\([^)]+\\))?!?: .+`, 'i');
 
-// Branch prefix → Conventional type (incl. AI-agent prefixes).
+// Human branch prefix → Conventional type. NOTE: agent/bot prefixes (claude/,
+// cursor/, codex/, codegen-bot/, copilot/, dependabot/) are intentionally NOT here
+// — their type comes from the PR's (conventional) commits; the branch prefix is
+// only a last-resort fallback.
 const BRANCH_TYPE = {
   feature: 'feat', feat: 'feat',
   fix: 'fix', bugfix: 'fix', hotfix: 'fix',
@@ -51,17 +57,21 @@ function processPRTitle(currentTitle, commits = [], branchName = '') {
   const title = (currentTitle || '').trim();
 
   if (CONVENTIONAL.test(title)) {
-    // Already valid — just lowercase the leading type token if needed.
-    const fixed = title.replace(/^(\w+)/, (t) => t.toLowerCase());
-    return fixed === title
-      ? { newTitle: title, changed: false, reason: 'already_valid' }
-      : { newTitle: fixed, changed: true, reason: 'case_correction' };
+    return { newTitle: title, changed: false, reason: 'already_valid' };
   }
 
-  // Not conventional — synthesise `<type>: <subject>`.
+  // Conventional except for the type's casing ("Feat: …") → just lowercase the type.
+  if (CONVENTIONAL_I.test(title)) {
+    const fixed = title.replace(/^([A-Za-z]+)/, (t) => t.toLowerCase());
+    return { newTitle: fixed, changed: true, reason: 'case_correction' };
+  }
+
+  // Not conventional — synthesise `<type>: <subject>`. Strip any leading
+  // "word(scope)!: " first so we never double-prefix (e.g. "WIP: foo", "Update: x").
   const type =
     detectTypeFromCommits(commits) || detectTypeFromBranch(branchName) || 'chore';
-  const subject = toSubject(title) || 'update';
+  const stripped = title.replace(/^[A-Za-z]+(\([^)]+\))?!?:\s*/, '');
+  const subject = toSubject(stripped || title) || 'update';
   return { newTitle: `${type}: ${subject}`, changed: true, reason: 'format_correction' };
 }
 

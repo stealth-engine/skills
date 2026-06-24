@@ -56,6 +56,15 @@ The workflow detects **which packages changed** with `dorny/paths-filter` and ru
 `semantic-release` once per changed package (a matrix), `max-parallel: 1` with a
 `git pull --rebase` retry so concurrent tag pushes don't collide.
 
+- **Replace `my-app`** in both `tagFormat` and the git commit `message` with the
+  real package name — otherwise every package shares one tag and the deploy gate
+  can't match the scope. The template's `exec` step bumps `package.json` **inline**
+  (no external script to create); swap in a script only if you need extra prepare
+  steps.
+- **The matrix workflow isn't shipped as a template.** [`templates/release.yml`](./templates/release.yml)
+  is the single-package one; for a monorepo, wrap that same `semantic-release` call
+  in a `dorny/paths-filter` → matrix job (`max-parallel: 1`, `git pull --rebase`
+  retry). See `piaf-monorepo`'s `release.yml` for a full example.
 - **Which package releases** comes from changed **file paths** (paths-filter), and
   the bump from the commit/PR-title **type**. Keep a PR to **one package** so the
   squash commit maps cleanly. For strict per-package *commit attribution*, add
@@ -91,7 +100,9 @@ no release branch needed. For continuous prereleases, add a `next`/`beta` branch
 ## Gotchas
 
 - **Plugin order is the pipeline.** `commit-analyzer` → `notes` → `changelog` →
-  `npm` → `git` → `github`. `npm` before `git`, or you commit a stale version.
+  `npm` → `git` → `github`. Both `changelog` **and** `npm` must come **before**
+  `git` — `git` commits the files they produce/bump, so a wrong order commits a
+  stale `CHANGELOG.md`/`package.json`.
 - **`EMISMATCHGITHUBURL` after an org/repo rename** — `package.json`'s `repository`
   field desyncs from the live URL. Pass `--repository-url "https://github.com/${GITHUB_REPOSITORY}.git"`
   (the template does).

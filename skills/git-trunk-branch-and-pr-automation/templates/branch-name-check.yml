@@ -3,7 +3,7 @@ name: Branch Name Validation
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, reopened, synchronize]
 
 concurrency:
   group: branch-check-${{ github.head_ref || github.run_id }}

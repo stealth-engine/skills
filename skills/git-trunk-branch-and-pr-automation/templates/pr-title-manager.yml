@@ -19,7 +19,8 @@ jobs:
       issues: write
       contents: read
     steps:
-      # Prevent cascades: a bot editing the title would re-trigger this workflow.
+      # Skip bot-authored PRs (e.g. dependabot) — their titles are already
+      # conventional, and we don't want to rewrite/churn them.
       - name: Guard against bot actors
         id: guard
         run: |

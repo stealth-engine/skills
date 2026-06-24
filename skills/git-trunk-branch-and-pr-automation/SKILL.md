@@ -33,7 +33,8 @@ Configure the repo so a merge collapses to one clean, semantic commit:
 - **GitHub → Settings → General → Pull Requests:** enable **Squash merging only**
   (turn off merge commits and rebase). Set **"Default commit message" →
   "Pull request title and commit details"** — GitHub then uses the **PR title as the
-  squash subject** and **concatenates the PR's commit messages into the body**.
+  squash subject** (it appends `(#<PR-number>)`, which doesn't affect Conventional
+  Commit parsing) and **concatenates the PR's commit messages into the body**.
 - So: the **title** must be a valid Conventional Commit (it's what semantic-release
   analyses → version + changelog); the **body** (the concatenated commits) preserves
   the detailed history.
@@ -59,9 +60,16 @@ checks (plus your release/CI checks) before a PR can merge.
 
 ## Gotchas
 
-- **Bot cascade:** when the workflow edits the title, that PR event would
-  re-trigger it. The template guards with an actor check
-  (`github.actor == *[bot]*` → skip). Don't remove it.
+- **Skip bot-authored PRs.** The template guards with an actor check
+  (`github.actor == *[bot]*` → skip) so it doesn't rewrite/churn titles on bot PRs
+  like dependabot (whose titles are already conventional). (Editing a title fires
+  the `edited` event, which isn't a trigger here, so there's no title-edit loop —
+  the guard is about not fighting bots, not preventing a cascade.)
+- **Agent/bot branch prefixes don't infer a type.** `claude/ cursor/ codex/ …`
+  are valid branch names, but the normaliser derives the type from the PR's
+  **commits** (which should be conventional), not the prefix — falling back to
+  `chore` only if neither title nor commits are conventional. Keep agent commits
+  conventional so the bump is right.
 - **Fork PRs:** `pull_request` from a fork gets a **read-only** token, so the bot
   can't edit the title or comment. Same-repo branches (the norm for this workflow)
   are fine; for forks, validate-only (fail the check) rather than auto-edit, or use

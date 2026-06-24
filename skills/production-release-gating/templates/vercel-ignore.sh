@@ -16,21 +16,23 @@ echo "Branch: $BRANCH"
 echo "Commit: ${MSG%%$'\n'*}"
 
 # Explicit skip on any branch.
-if [[ "$MSG" == *"[skip-deploy]"* ]]; then echo "⏭️  skip marker"; exit 0; fi
+if [[ "$MSG" == *"[skip-deploy]"* ]]; then echo "[SKIP] skip marker"; exit 0; fi
 
-# Feature branches → always build (preview deployments).
-if [[ "$BRANCH" != "main" ]]; then echo "✅ preview branch → build"; exit 1; fi
+# Feature branches -> always build (preview deployments).
+if [[ "$BRANCH" != "main" ]]; then echo "[BUILD] preview branch"; exit 1; fi
 
 # --- On main: strict. Only release commits or an explicit deploy marker. ---
-if [[ "$MSG" == *"[deploy]"* ]]; then echo "🚀 deploy marker → build"; exit 1; fi
+if [[ "$MSG" == *"[deploy]"* ]]; then echo "[BUILD] deploy marker"; exit 1; fi
 
-# semantic-release commit, e.g. "chore(release): 1.2.3" or "chore(my-app): release 1.2.3"
-if [[ "$MSG" =~ ^chore(\(.+\))?:\ release ]] || [[ "$MSG" =~ ^chore\(.+\):\ ${BRANCH}?.*release ]]; then
-  echo "📦 release commit → build"; exit 1
+# semantic-release commit. Match BOTH flavors:
+#   single-package: "chore(release): 1.2.3"   (release is the scope)
+#   monorepo:       "chore(my-app): release 1.2.3 [skip ci]"   (release follows the colon)
+if [[ "$MSG" =~ ^chore\(release\): ]] || [[ "$MSG" =~ ^chore\(.+\):\ release ]]; then
+  echo "[BUILD] release commit"; exit 1
 fi
 
 # Monorepo: also build when a dependency package released, e.g.:
 # if [[ "$MSG" =~ ^chore\((configs|i18n-routing)\):.*release ]]; then exit 1; fi
 
-echo "❌ main, non-release commit → skip"
+echo "[SKIP] main, non-release commit"
 exit 0

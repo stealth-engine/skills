@@ -114,7 +114,7 @@ covers the CI that enforces this.
   PR title first.
 - **Don't hand-write `chore(release): …` commits.** Those are produced *by* the
   release bot; writing one yourself can confuse tooling (and such commits are often
-  CI-skipped on purpose).
+  CI-skipped deliberately).
 - **Issue IDs in the subject can misbehave.** A Linear/Jira key like `ABC-123` in
   the subject may auto-transition the ticket or render oddly in changelog links;
   some setups keep IDs in the footer or de-link them (`ABC-123` → `ABC - 123`) in
