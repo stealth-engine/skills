@@ -54,14 +54,15 @@ for i in $(seq 1 50); do
   # (a real gh/network failure) is treated as "not settled".
   checks=$(gh pr checks $PR --repo $REPO --json name,bucket 2>/dev/null) || true
   if [ -n "$checks" ]; then
-    total=$(printf '%s' "$checks" | jq 'length')
-    # Count checks still pending, excluding human-gated approvers. Replace the literal
-    # "Approval Agent" below with YOUR repo's human-gate check name(s). # <-- tune this
+    # Count REAL (non-human-gate) checks: how many registered, how many still pending.
+    # Replace "Approval Agent" with YOUR repo's human-gate check name(s). # <-- tune this
+    real=$(printf '%s' "$checks" | jq '[.[] | select(.name|test("Approval Agent")|not)] | length')
     blocking=$(printf '%s' "$checks" |
       jq '[.[] | select(.bucket=="pending" and (.name|test("Approval Agent")|not))] | length')
-    # Require ≥1 registered check AND none pending. An empty [] means CI hasn't
-    # registered any checks yet (gh exits non-zero with an empty list) — NOT settled.
-    if [ "${total:-0}" -gt 0 ] && [ "${blocking:-1}" -eq 0 ]; then
+    # Settle only when ≥1 REAL check has registered AND none are pending. This guards
+    # both the empty-[] case and the "only a pending human-gate is registered" case
+    # (the gate alone must not look like finished CI).
+    if [ "${real:-0}" -gt 0 ] && [ "${blocking:-1}" -eq 0 ]; then
       echo "settled"; gh pr checks $PR --repo $REPO; settled=1; break
     fi
   fi
