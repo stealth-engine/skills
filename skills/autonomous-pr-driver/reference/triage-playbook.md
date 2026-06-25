@@ -13,7 +13,9 @@ PR=123 ; REPO=owner/name
 export HEAD=$(gh pr view $PR --repo $REPO --json headRefOid --jq .headRefOid)
 
 # Review bodies (top-level summaries) for THIS round — state + who.
-gh api repos/$REPO/pulls/$PR/reviews --jq \
+# --paginate: reviews come ~30/page oldest-first, so HEAD's reviews are on the LAST
+# page; without it a multi-round PR's current reviews get missed.
+gh api repos/$REPO/pulls/$PR/reviews --paginate --jq \
   '.[] | select(.commit_id == env.HEAD) | "\(.user.login) [\(.state)] \(.submitted_at)"'
 
 # Inline comments on THIS round (HEAD), with the stable finding id.
