@@ -75,10 +75,11 @@ checks (plus your release/CI checks) before a PR can merge.
 - **Fork / bot PRs are validate-only.** `pull_request` from a fork gets a
   **read-only** token *and* an attacker-controlled checkout, so the template never
   checks out or runs the (PR-modifiable) script for them — it validates the title
-  inline via the API (read-only) and **fails** if it isn't a releasing Conventional
-  Commit. Same-repo human branches (the norm for this trunk-based workflow) are the
-  only ones auto-edited. Configure dependabot with a conventional
-  `commit-message.prefix` so its titles pass.
+  inline via the API (read-only) and **fails** if it isn't a valid Conventional
+  Commit (any type, including non-releasing `docs:`/`chore:`), or if a `type!:`-style
+  breaking commit isn't reflected by a `!` in the title. Same-repo human branches
+  (the norm for this trunk-based workflow) are the only ones auto-edited. Configure
+  dependabot with a conventional `commit-message.prefix` so its titles pass.
 - **Squash settings are per-repo and easy to miss** — if "Default commit message"
   is left as "Default" (the first commit's message) instead of **"Pull request
   title and commit details"**, your carefully-named PR title is ignored at merge.
