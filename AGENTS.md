@@ -8,6 +8,8 @@ A collection of [skills.sh](https://www.skills.sh)-compatible **agent skills**.
 Each skill is reusable, on-demand context for an AI coding agent. One skill =
 one folder under `skills/` with a `SKILL.md`.
 
+**Project tracking:** [Linear — Skills](https://linear.app/stealth-company/project/skills-2bf14f088070/overview).
+
 ## Layout
 
 ```
