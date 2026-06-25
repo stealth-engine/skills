@@ -8,14 +8,15 @@ need the exact `gh` calls or the finer judgment rules; the lifecycle overview is
 
 ```bash
 PR=123 ; REPO=owner/name
-
-# Review bodies (top-level summaries) — state + which commit they reviewed.
-gh api repos/$REPO/pulls/$PR/reviews --jq \
-  '.[] | "\(.user.login) [\(.state)] \(.commit_id[0:7]) \(.submitted_at)"'
-
-# Inline comments on THIS round only — filtered to the PR's HEAD commit — with the
-# stable finding id. (gojq reads `env.HEAD`, so export it first.)
+# HEAD = the commit this round is about. Filter BOTH reviews and comments to it so
+# stale findings from older commits don't leak into triage. (gojq reads env.HEAD.)
 export HEAD=$(gh pr view $PR --repo $REPO --json headRefOid --jq .headRefOid)
+
+# Review bodies (top-level summaries) for THIS round — state + who.
+gh api repos/$REPO/pulls/$PR/reviews --jq \
+  '.[] | select(.commit_id == env.HEAD) | "\(.user.login) [\(.state)] \(.submitted_at)"'
+
+# Inline comments on THIS round (HEAD), with the stable finding id.
 gh api repos/$REPO/pulls/$PR/comments --paginate --jq \
   '.[] | select(.commit_id == env.HEAD)
        | "\(.user.login) | \(.path):\(.line // .original_line) | "
@@ -49,10 +50,15 @@ for i in $(seq 1 50); do
   # genuinely empty result (a real gh/network failure) is treated as "not settled".
   checks=$(gh pr checks $PR --repo $REPO --json name,bucket 2>/dev/null) || true
   if [ -n "$checks" ]; then
+    total=$(printf '%s' "$checks" | jq 'length')
     # Count checks still pending, excluding human-gated approvers (tune the pattern).
     blocking=$(printf '%s' "$checks" |
       jq '[.[] | select(.bucket=="pending" and (.name|test("Approval Agent")|not))] | length')
-    if [ "${blocking:-1}" -eq 0 ]; then echo "settled"; gh pr checks $PR --repo $REPO; settled=1; break; fi
+    # Require ≥1 registered check AND none pending. An empty [] means CI hasn't
+    # registered any checks yet (gh exit 16) — that's NOT settled, keep polling.
+    if [ "${total:-0}" -gt 0 ] && [ "${blocking:-1}" -eq 0 ]; then
+      echo "settled"; gh pr checks $PR --repo $REPO; settled=1; break
+    fi
   fi
   sleep 20
 done
