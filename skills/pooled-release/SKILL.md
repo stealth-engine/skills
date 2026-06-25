@@ -1,6 +1,6 @@
 ---
 name: pooled-release
-description: "Cut fewer, batched releases (a 'release train') instead of one per merge — by triggering semantic-release on demand or on a cadence rather than on every push to main. Use when releasing on every merge is too noisy, when you want one larger readable changelog per release, to add a manual 'cut a release' button (workflow_dispatch) or a scheduled/weekly release, to set up prerelease channels (beta/next → promote to stable), or when deciding whether you need a release branch. Builds on semantic-release-automation — only the trigger changes. Covers why pooling doesn't slow development, and when release branches are (rarely) worth it."
+description: "Cut fewer, batched releases (a 'release train') instead of one per merge — by triggering semantic-release on demand or on a cadence rather than on every push to main. Use when releasing on every merge is too noisy, when you want one larger readable changelog per release, to add a manual 'cut a release' button (workflow_dispatch) or a scheduled/weekly release, to set up prerelease channels (next/beta → promote to stable), or when deciding whether you need a release branch."
 metadata:
   author: stealth-engine
   version: "1.0.0"
@@ -39,11 +39,21 @@ first two; it ships with `workflow_dispatch` on and `schedule` commented.
    releases; no release branch.
 2. **Cadence — `schedule`.** Uncomment the `cron` for an automatic train (e.g. weekly).
    Good when you want predictable, regular cuts. (Combine with the button if you like.)
-3. **Prerelease channels — `beta`/`next`.** Continuous prereleases on a `next`/`beta`
-   branch, promoted to a batched stable cut on `main`. Use
-   [`templates/releaserc.prerelease-channels.json`](./templates/releaserc.prerelease-channels.json)
-   (the `branches` config) — merge work to `next` for `x.y.z-next.N` prereleases, then
-   fast-forward `main` for the stable release.
+3. **Prerelease channels — `next` (and/or `beta`).** A *related* pattern, not strictly
+   pooling: push work to a `next` branch for **continuous** `x.y.z-next.N` prereleases,
+   then cut a batched **stable** release by promoting `next` → `main` **when you
+   choose** (that promotion is the "pooling"). Notes:
+   - This model is **push-triggered on the prerelease branch**, so it pairs with the
+     parent skill's `release.yml` set to `branches: [main, next]` — **not** the
+     on-demand workflow above (which would defeat the "continuous" part). The
+     `branches` config is in
+     [`templates/releaserc.prerelease-channels.json`](./templates/releaserc.prerelease-channels.json).
+   - Channels are **independent** — a `next` and a `beta` channel don't flow into each
+     other (no auto-promotion between them), so **pick one** unless you genuinely need
+     two parallel pre-release lines. The template ships just `next`; add a
+     `{ "name": "beta", "prerelease": true }` entry only if you do.
+   - Promote with a normal **merge or fast-forward** of `next` into `main` — semantic-
+     release cuts the stable release once the commits are reachable from `main`, either way.
 
 ## Release branches — usually don't
 
@@ -77,8 +87,11 @@ Start from `semantic-release-automation`'s `release.yml` and:
 - **A pooled release can still gate a deploy** — pair with
   [`production-release-gating`](../production-release-gating/SKILL.md) (deploy on the
   published Release / the release commit), so prod ships on the train, not on merges.
-- **Prerelease channels need the branch to exist** and work pushed to it; the stable
-  cut happens when `next`/`beta` reaches `main`.
+- **Don't add `on: push` to the on-demand workflow without re-adding the loop guard.**
+  With only `workflow_dispatch`/`schedule`, the `chore(release): …` commit can't
+  re-trigger it (no guard needed). If you later add `on: push` (e.g. for hotfixes),
+  re-add `if: !startsWith(github.event.head_commit.message, 'chore(release):')` or it
+  will loop.
 
 ## Verify
 

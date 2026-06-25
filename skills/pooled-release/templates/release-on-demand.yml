@@ -15,7 +15,9 @@ permissions:
   issues: write
   pull-requests: write
 
-# Serialize releases so a manual run and a scheduled run can't collide.
+# Serialize releases so a manual run and a scheduled run can't collide. No ref
+# suffix (unlike a push-triggered workflow): dispatch + schedule always run on the
+# default branch, so there's only ever one release line to serialize.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -32,7 +34,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: lts/*
+          node-version: lts/* # current LTS; satisfies semantic-release's Node >= 22.14.0
           cache: npm
 
       - run: npm ci
