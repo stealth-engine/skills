@@ -59,10 +59,11 @@ for i in $(seq 1 50); do
     real=$(printf '%s' "$checks" | jq '[.[] | select(.name|test("Approval Agent")|not)] | length')
     blocking=$(printf '%s' "$checks" |
       jq '[.[] | select(.bucket=="pending" and (.name|test("Approval Agent")|not))] | length')
-    # Settle only when ≥1 REAL check has registered AND none are pending. This guards
-    # both the empty-[] case and the "only a pending human-gate is registered" case
-    # (the gate alone must not look like finished CI).
-    if [ "${real:-0}" -gt 0 ] && [ "${blocking:-1}" -eq 0 ]; then
+    # Settle when no REAL (non-gate) check is pending, AND either a real check has
+    # registered OR a grace period (~iters*20s) has elapsed. The grace window avoids
+    # settling in the startup race (CI not registered yet) while still letting a
+    # gate-only / no-CI repo settle (so a passed-gate-only PR isn't stuck until timeout).
+    if [ "${blocking:-1}" -eq 0 ] && { [ "${real:-0}" -gt 0 ] || [ "$i" -ge 3 ]; }; then
       echo "settled"; gh pr checks $PR --repo $REPO; settled=1; break
     fi
   fi

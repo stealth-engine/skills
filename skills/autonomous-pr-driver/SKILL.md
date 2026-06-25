@@ -1,6 +1,6 @@
 ---
 name: autonomous-pr-driver
-description: "Autonomously drive a pull request to merge-ready: open it (branch + Conventional Commit title) or attach to an existing one, watch CI/checks, then run the bot-review loop — triage each finding, fix the valid ones, reject the invalid ones with a comment (@-mentioning the bot so it can learn), push, and repeat until green, then ping a human to merge. Use when asked to 'drive / ship / land this PR', 'get the PR green', 'resolve the PR review comments', 'address the CodeRabbit / Cursor / Bugbot / Codex findings', 'fix the code review and push', or to loop on PR reviews until checks pass."
+description: "Autonomously drive a pull request to merge-ready — opening or attaching to it, then resolving automated code review (triage findings, fix the valid, reject the invalid, push, repeat until green) and pinging a human to merge. Use when asked to 'drive / ship / land this PR', 'get the PR green', 'resolve the PR review comments', 'address the CodeRabbit / Cursor / Bugbot / Codex findings', 'fix the code review and push', or to loop on PR reviews until checks pass."
 metadata:
   author: stealth-engine
   version: "1.0.0"
