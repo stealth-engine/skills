@@ -38,12 +38,16 @@ Don't triage mid-run. Treat as settled when nothing is pending **except** a
 human-gated approver. Run this in the background and act when it returns:
 
 ```bash
+settled=0
 for i in $(seq 1 50); do
   out=$(gh pr checks $PR --repo $REPO 2>/dev/null)
   pending=$(printf '%s\n' "$out" | grep -i 'pending' | grep -vci 'Approval Agent')
-  [ "${pending:-0}" -eq 0 ] && { echo "settled"; printf '%s\n' "$out"; break; }
+  if [ "${pending:-0}" -eq 0 ]; then echo "settled"; printf '%s\n' "$out"; settled=1; break; fi
   sleep 20
 done
+# Don't treat "ran out of budget" as success — surface the timeout so the loop
+# can decide (a check may be stuck/queued; investigate rather than triage blindly).
+[ "$settled" -eq 1 ] || { echo "TIMED OUT — checks never settled:"; printf '%s\n' "$out"; exit 1; }
 ```
 
 Tune the `grep -vci` exclusion to whatever human-gated/neutral checks your repo has
