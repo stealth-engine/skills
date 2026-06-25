@@ -1,6 +1,6 @@
 ---
 name: autonomous-pr-driver
-description: "Autonomously drive a pull request to merge-ready: open it (branch + Conventional Commit title) or attach to an existing one, watch CI/checks, then run the bot-review loop — triage each finding, fix the valid ones, reject the invalid ones with a comment (@-mentioning the bot so it can learn), push, and repeat until green, then ping a human to merge. Use when asked to 'drive / ship / land this PR', 'get the PR green', 'resolve the PR review comments', 'address the CodeRabbit / Cursor / Bugbot / Codex findings', 'fix the code review and push', or to loop on PR reviews until all checks pass. Pairs with a /goal that re-runs the loop. Covers triage (dedup stale re-posts by finding ID, verify-before-trust, adjudicating conflicting bots), the @-mention learning policy, fork-PR safety, and convergence (checks-green, not zero-comments)."
+description: "Autonomously drive a pull request to merge-ready: open it (branch + Conventional Commit title) or attach to an existing one, watch CI/checks, then run the bot-review loop — triage each finding, fix the valid ones, reject the invalid ones with a comment (@-mentioning the bot so it can learn), push, and repeat until green, then ping a human to merge. Use when asked to 'drive / ship / land this PR', 'get the PR green', 'resolve the PR review comments', 'address the CodeRabbit / Cursor / Bugbot / Codex findings', 'fix the code review and push', or to loop on PR reviews until checks pass."
 metadata:
   author: stealth-engine
   version: "1.0.0"

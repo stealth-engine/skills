@@ -9,7 +9,8 @@ need the exact `gh` calls or the finer judgment rules; the lifecycle overview is
 ```bash
 PR=123 ; REPO=owner/name
 # HEAD = the commit this round is about. Filter BOTH reviews and comments to it so
-# stale findings from older commits don't leak into triage. (gojq reads env.HEAD.)
+# stale findings from older commits don't leak into triage. (jq/gojq both read
+# env.HEAD, so it must be exported, not just a shell var.)
 export HEAD=$(gh pr view $PR --repo $REPO --json headRefOid --jq .headRefOid)
 
 # Review bodies (top-level summaries) for THIS round — state + who.
@@ -48,16 +49,18 @@ for i in $(seq 1 50); do
   # Structured output (don't grep text); FAIL CLOSED — an errored/empty result is
   # treated as "not settled" so a transient gh/network failure can't look settled.
   # gh pr checks exits non-zero while checks are pending/failing but STILL prints the
-  # JSON — so `|| true` keeps the captured stdout (don't clobber it to ""). Only a
-  # genuinely empty result (a real gh/network failure) is treated as "not settled".
+  # JSON (pending → exit 8, documented; failing → exit 1 per gh source) — so `|| true`
+  # keeps the captured stdout (don't clobber it to ""). Only a genuinely empty result
+  # (a real gh/network failure) is treated as "not settled".
   checks=$(gh pr checks $PR --repo $REPO --json name,bucket 2>/dev/null) || true
   if [ -n "$checks" ]; then
     total=$(printf '%s' "$checks" | jq 'length')
-    # Count checks still pending, excluding human-gated approvers (tune the pattern).
+    # Count checks still pending, excluding human-gated approvers. Replace the literal
+    # "Approval Agent" below with YOUR repo's human-gate check name(s). # <-- tune this
     blocking=$(printf '%s' "$checks" |
       jq '[.[] | select(.bucket=="pending" and (.name|test("Approval Agent")|not))] | length')
     # Require ≥1 registered check AND none pending. An empty [] means CI hasn't
-    # registered any checks yet (gh exit 16) — that's NOT settled, keep polling.
+    # registered any checks yet (gh exits non-zero with an empty list) — NOT settled.
     if [ "${total:-0}" -gt 0 ] && [ "${blocking:-1}" -eq 0 ]; then
       echo "settled"; gh pr checks $PR --repo $REPO; settled=1; break
     fi
@@ -80,7 +83,9 @@ Bots re-anchor the **same** finding to new line numbers on every push, so matchi
 on `path:line` makes everything look "new." Match on the stable id instead:
 
 - **Cursor Bugbot:** `BUGBOT_BUG_ID: <uuid>` in the comment body.
-- **CodeRabbit:** `cr-comment:v1:<hash>` and `fingerprint:` markers.
+- **CodeRabbit:** `cr-comment:v1:<hash>` — the per-comment id (use this). A
+  `fingerprinting:…` marker also appears but is a coarse *category* repeated across
+  comments, **not** a per-comment id — don't dedup on it (it would merge distinct findings).
 - Others: hash the (rule + file) or the first sentence of the body.
 
 Keep a set of seen/resolved ids across rounds. A finding whose id you've already

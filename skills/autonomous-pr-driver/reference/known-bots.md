@@ -7,7 +7,7 @@
 
 | Bot | Posts as | Finding ID | Learns from @-mention? | @-handle | Notes |
 | --- | --- | --- | --- | --- | --- |
-| **CodeRabbit** | `coderabbitai[bot]` | `cr-comment:v1:<hash>`, `fingerprint:` | **Yes** | `@coderabbitai` | Re-scans HEAD on mention, confirms resolution, records persistent **Learnings** so it won't re-raise. The one bot worth engaging. Has a CLI too (`coderabbit review --agent`). |
+| **CodeRabbit** | `coderabbitai[bot]` | `cr-comment:v1:<hash>` (per-comment; `fingerprinting:` is a non-unique category — don't dedup on it) | **Yes** | `@coderabbitai` | Re-scans HEAD on mention, confirms resolution, records persistent **Learnings** so it won't re-raise. The one bot worth engaging. Has a CLI too (`coderabbit review --agent`). |
 | **Cursor Bugbot** | `cursor[bot]` | `BUGBOT_BUG_ID: <uuid>` | **No (observed)** | — | Re-posts the *same* `BUGBOT_BUG_ID` against new line numbers every push, including long-fixed ones. Dedup by the id; don't tag it. Ships "Fix in Cursor/Web" deep-links. Severity: Low/Medium/High. |
 | **Cursor Approval Agent** | `cursor[bot]` | — | n/a | — | A **human-gate**: posts "requesting human review from <user>", stays `pending`/flips to pass. Exclude from the "settled" check so it never blocks the loop. |
 | **blocksorg** | `blocksorg[bot]` | none (use rule+file) | **No (observed)** | — | "Severity N" findings; re-posts resolved ones across rounds. Caught a real fork-PR RCE once, so don't dismiss blindly — verify, then dedup. |
