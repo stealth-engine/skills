@@ -11,12 +11,13 @@
 | **Cursor Bugbot** | `cursor[bot]` | `BUGBOT_BUG_ID: <uuid>` | **No (observed)** | — | Re-posts the *same* `BUGBOT_BUG_ID` against new line numbers every push, including long-fixed ones. Dedup by the id; don't tag it. Ships "Fix in Cursor/Web" deep-links. Severity: Low/Medium/High. |
 | **Cursor Approval Agent** | `cursor[bot]` | — | n/a | — | A **human-gate**: posts "requesting human review from <user>", stays `pending`/flips to pass. Exclude from the "settled" check so it never blocks the loop. |
 | **blocksorg** | `blocksorg[bot]` | none (use rule+file) | **No (observed)** | — | "Severity N" findings; re-posts resolved ones across rounds. Caught a real fork-PR RCE once, so don't dismiss blindly — verify, then dedup. |
-| **Codex** | `chatgpt-codex-connector[bot]` | `P1`/`P2` badges | partial | `@codex` | Posts suggestions as a review; **reacts 👍 when it has nothing** / is satisfied. Responds to `@codex review` / `@codex address`. |
+| **Codex** | `chatgpt-codex-connector[bot]` | `P1`/`P2` badges | partial | `@codex` *(unverified)* | Posts suggestions as a review; **reacts 👍 when it has nothing** / is satisfied. Responds to `@codex review` / `@codex address`. Confirm the exact @-handle in a live repo before relying on it. |
 
 ## How to use this
 
-- **Dedup**: pull each bot's stable id (column 3) and keep a resolved-id set across
-  rounds — see the dedup recipe in the playbook.
+- **Dedup**: for rows with a stable id (column 3), keep a resolved-id set across
+  rounds; for `none` / `—` rows (e.g. blocksorg, human-gates), fall back to the
+  playbook's rule+file identity. See the dedup recipe in the playbook.
 - **@-mention policy**: tag bots in the "learns = Yes" rows when you reject one of
   their findings; skip the mention for "No" rows (it's noise). Re-evaluate a bot's
   "learns" status if you see new evidence.

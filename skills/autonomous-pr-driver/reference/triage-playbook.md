@@ -17,7 +17,9 @@ gh api repos/$REPO/pulls/$PR/reviews --jq \
 # the stable finding id. Filter to the LATEST commit to see "this round".
 gh api repos/$REPO/pulls/$PR/comments --paginate --jq \
   '.[] | "\(.user.login) | \(.path):\(.line // .original_line) | \(.commit_id[0:7]) | "
-   + (.body|capture("BUGBOT_BUG_ID: (?<id>[a-f0-9-]+)")?.id // "n/a")'
+   + ( (.body|capture("BUGBOT_BUG_ID: (?<id>[a-f0-9-]+)")?|.id)      # Cursor
+     // (.body|capture("cr-comment:v1:(?<id>[a-z0-9]+)")?|.id)        # CodeRabbit
+     // "n/a" )'
 
 # Top-level (issue) comments — bots post summaries/replies here too.
 gh api repos/$REPO/issues/$PR/comments --paginate --jq '.[] | "\(.user.login) \(.created_at)"'
@@ -70,7 +72,10 @@ read. Cheap verifications that repeatedly paid off:
   get mangled by quoting): `printf '%s' "$msg" | grep -E '<pattern>'`, or a tiny
   `bash test.sh`.
 - **Code logic** → a 5-line `node`/`python` harness exercising the edge cases.
-- **Version / "X is unpublished" claims** → `gh api repos/<owner>/<repo>/releases/latest --jq .tag_name`.
+- **Version / "X is unpublished" claims** → check the tag exists:
+  `gh api repos/<owner>/<repo>/git/ref/tags/<tag>` (404 = doesn't exist). Prefer this
+  over `releases/latest`, which 404s for repos that tag without publishing a Release
+  (common for GitHub Actions).
 - **"Does the tool actually do Y"** → check the upstream docs/source, not memory.
 
 If verification contradicts the bot → it's an **invalid** finding (reject). If it
@@ -110,17 +115,21 @@ EOF
 - `@coderabbitai` re-scans and records Learnings → tag it when rejecting.
 - Don't tag bots that have re-posted resolved findings repeatedly (see
   [`known-bots.md`](./known-bots.md)) — it's noise.
-- If `gh pr create`/`gh pr comment` 401s on GraphQL but `gh api` reads work, the
-  token is read-restricted — fall back to `gh api ... -X POST .../pulls` or surface a
-  compare URL and ask the human to refresh `gh auth`.
+- If a `gh` write 401s but `gh api` reads work, the token is read-restricted/expired
+  (`gh pr create`/`gh pr comment` use GraphQL). REST fallbacks:
+  - **open a PR:** `gh api repos/$REPO/pulls -X POST -f title=… -f head=… -f base=… -f body=…`
+  - **post a comment:** `gh api repos/$REPO/issues/$PR/comments -X POST -f body=…`
+  - If REST also 401s, the token itself is bad → ask the human to `gh auth login`
+    (or, for opening a PR, surface a compare URL they can click).
 
 ## Auth & transport gotchas
 
 - Git **push** over SSH can succeed while the **`gh` API token** is invalid — check
   `gh auth status` if API writes fail but pushes don't.
 - A release/commit made with the built-in `GITHUB_TOKEN` won't trigger downstream
-  `on:` workflows; a PAT/bot token does. Relevant when a deploy/check only fires on a
-  bot action.
+  `push` / `pull_request` / `release` `on:` workflows (a PAT/bot token does) —
+  relevant when a deploy/check only fires on a bot action. *(Exception:
+  `workflow_dispatch` / `repository_dispatch` can still be fired with `GITHUB_TOKEN`.)*
 
 ## Convergence — the honest definition
 
