@@ -18,7 +18,7 @@ gh api repos/$REPO/pulls/$PR/reviews --jq \
 gh api repos/$REPO/pulls/$PR/comments --paginate --jq \
   '.[] | "\(.user.login) | \(.path):\(.line // .original_line) | \(.commit_id[0:7]) | "
    + ( (.body|capture("BUGBOT_BUG_ID: (?<id>[a-f0-9-]+)")?|.id)      # Cursor
-     // (.body|capture("cr-comment:v1:(?<id>[a-z0-9]+)")?|.id)        # CodeRabbit
+     // (.body|capture("cr-comment:v1:(?<id>[A-Za-z0-9]+)")?|.id)     # CodeRabbit
      // "n/a" )'
 
 # Top-level (issue) comments — bots post summaries/replies here too.
