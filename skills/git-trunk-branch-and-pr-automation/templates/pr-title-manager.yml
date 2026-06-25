@@ -1,0 +1,153 @@
+name: PR Title Manager
+# [AUTOMATED] Normalises the PR title to Conventional Commits so the squash-merge
+# commit (PR title + concatenated commits) drives versioning/changelog cleanly.
+
+on:
+  pull_request:
+    # `edited` so a title changed AFTER the first run is re-validated (else a
+    # stale green check could merge a non-conventional title). The bot-actor
+    # guard below stops this job's own title edit from looping.
+    # `ready_for_review` because the job is gated on `draft == false`, so a PR
+    # opened as a draft must be (re)checked when it's marked ready.
+    types: [opened, reopened, synchronize, edited, ready_for_review]
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  manage-title:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
+      contents: read
+    steps:
+      - name: Classify the PR → mode
+        id: ctx
+        env:
+          ACTOR: ${{ github.actor }} # via env, never inline in run: (injection)
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.event.pull_request.base.repo.full_name }}
+        run: |
+          # mode = skip | validate | normalize
+          #  - skip:      our OWN title edits, to avoid an infinite edit loop.
+          #  - validate:  forks (untrusted checkout + read-only token) AND other bots
+          #               like dependabot (read-only token, often non-conventional
+          #               titles) — check only, never check out fork code or write.
+          #  - normalize: same-repo human PRs — safe to run the script and edit.
+          mode=normalize
+          if [[ "$ACTOR" == "github-actions[bot]" ]]; then
+            mode=skip
+          elif [[ "$HEAD_REPO" != "$BASE_REPO" || "$ACTOR" == *"[bot]"* ]]; then
+            mode=validate
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+
+      # NORMALIZE (same-repo human) ONLY: safe to check out + run the PR-modifiable script.
+      - name: Checkout the shared script
+        if: steps.ctx.outputs.mode == 'normalize'
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            .github/scripts
+
+      - name: Normalise PR title (same-repo)
+        if: steps.ctx.outputs.mode == 'normalize'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { processPRTitle } = require(
+              `${process.env.GITHUB_WORKSPACE}/.github/scripts/normalize-pr-title.js`
+            );
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+            const issue_number = pr.number;
+
+            // Opt-out: leave the title alone (but warn — semantic tooling depends on it).
+            if (pr.title.includes('[skip title auto pr]')) {
+              core.info('Opt-out marker present; not touching the title.');
+              return;
+            }
+
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner, repo, pull_number: issue_number, per_page: 100,
+            });
+            const { newTitle, changed } = processPRTitle(pr.title, commits, pr.head.ref);
+
+            if (changed && newTitle !== pr.title) {
+              await github.rest.pulls.update({ owner, repo, pull_number: issue_number, title: newTitle });
+              core.info(`PR title → ${newTitle}`);
+            }
+
+            // Sticky comment explaining the convention (upserted).
+            const marker = '<!-- pr-title-manager -->';
+            const body = `${marker}
+            ## 🤖 PR title (Conventional Commits)
+
+            **Title:** \`${newTitle}\`
+
+            Because we **squash-merge**, this title becomes the commit message on \`main\`
+            (the individual commits become its body), so it must be a Conventional Commit —
+            that's what drives automated versioning and the changelog.
+
+            Opt out with \`[skip title auto pr]\` (not recommended).`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const existing = comments.find((c) => c.body?.includes(marker));
+            if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number, body });
+
+      # VALIDATE-ONLY (forks + non-self bots like dependabot): can't run their script
+      # (untrusted) or write (read-only token). Validate the title INLINE (no checkout,
+      # no fork code) and FAIL if it isn't a Conventional Commit — so neither a fork
+      # nor a bot can merge a non-releasing title.
+      - name: Validate PR title (read-only, no checked-out code)
+        if: steps.ctx.outputs.mode == 'validate'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const title = pr.title;
+            // Honour the same opt-out as the same-repo path (documented escape hatch).
+            if (title.includes('[skip title auto pr]')) {
+              core.info('Opt-out marker present; skipping fork title validation.');
+              return;
+            }
+            const TYPES = ['feat','fix','docs','style','refactor','perf','test','build','ci','chore','revert'];
+            // STRICT (case-sensitive, lowercase types) on purpose: unlike same-repo
+            // PRs, we can't auto-fix a fork's title, and a mis-cased type like
+            // `Feat:` doesn't match semantic-release's release rules → no release.
+            // So require a release-ready title; the contributor must use `feat: …`.
+            const conventional = new RegExp(`^(${TYPES.join('|')})(\\([^)]+\\))?!?: .+`);
+            if (!conventional.test(title)) {
+              core.setFailed(
+                `Fork PR title must be a lowercase Conventional Commit (e.g. "feat: …") — ` +
+                `it becomes the squash commit and we can't auto-correct a fork's title: "${title}"`
+              );
+              return;
+            }
+            // Reading commits via the API is read-only-safe (no fork code runs). If a
+            // commit is breaking but the title lacks `!`, the squash would under-release
+            // (minor/patch instead of major) — fail so the contributor adds the `!`.
+            const { owner, repo } = context.repo;
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner, repo, pull_number: pr.number, per_page: 100,
+            });
+            const msgs = commits.map((c) => c.commit?.message || '');
+            // A `BREAKING CHANGE:` footer survives in the squash BODY and is still
+            // detected there (semantic-release reads notes from the body), so it
+            // doesn't need a title `!`. Only a bang-style break (`feat!:`) is lost on
+            // squash unless the title carries the `!`.
+            const footerBreaking = msgs.some((m) => /^BREAKING[ -]CHANGE:/m.test(m));
+            const bangBreaking = msgs.some((m) => /^\w+(\([^)]+\))?!:/.test(m));
+            const titleBreaking = /^[a-z]+(\([^)]+\))?!:/.test(title);
+            if (bangBreaking && !footerBreaking && !titleBreaking) {
+              core.setFailed(
+                `A commit is breaking (\`type!:\`) but the title has no "!" and there's ` +
+                `no BREAKING CHANGE footer to survive the squash. Add "!" (e.g. ` +
+                `"feat!: …") so the merge cuts a MAJOR release: "${title}"`
+              );
+            }
