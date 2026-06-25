@@ -13,13 +13,15 @@ PR=123 ; REPO=owner/name
 gh api repos/$REPO/pulls/$PR/reviews --jq \
   '.[] | "\(.user.login) [\(.state)] \(.commit_id[0:7]) \(.submitted_at)"'
 
-# Inline comments — path, line, the commit they're anchored to, and (if present)
-# the stable finding id. Filter to the LATEST commit to see "this round".
+# Inline comments on THIS round only — filtered to the PR's HEAD commit — with the
+# stable finding id. (gojq reads `env.HEAD`, so export it first.)
+export HEAD=$(gh pr view $PR --repo $REPO --json headRefOid --jq .headRefOid)
 gh api repos/$REPO/pulls/$PR/comments --paginate --jq \
-  '.[] | "\(.user.login) | \(.path):\(.line // .original_line) | \(.commit_id[0:7]) | "
-   + ( (.body|capture("BUGBOT_BUG_ID: (?<id>[a-f0-9-]+)")?|.id)      # Cursor
-     // (.body|capture("cr-comment:v1:(?<id>[A-Za-z0-9]+)")?|.id)     # CodeRabbit
-     // "n/a" )'
+  '.[] | select(.commit_id == env.HEAD)
+       | "\(.user.login) | \(.path):\(.line // .original_line) | "
+       + ( (.body|capture("BUGBOT_BUG_ID: (?<id>[a-f0-9-]+)")?|.id)      # Cursor
+         // (.body|capture("cr-comment:v1:(?<id>[A-Za-z0-9]+)")?|.id)    # CodeRabbit
+         // "n/a" )'
 
 # Top-level (issue) comments — bots post summaries/replies here too.
 gh api repos/$REPO/issues/$PR/comments --paginate --jq '.[] | "\(.user.login) \(.created_at)"'
@@ -42,7 +44,10 @@ settled=0
 for i in $(seq 1 50); do
   # Structured output (don't grep text); FAIL CLOSED — an errored/empty result is
   # treated as "not settled" so a transient gh/network failure can't look settled.
-  checks=$(gh pr checks $PR --repo $REPO --json name,bucket 2>/dev/null) || checks=""
+  # gh pr checks exits non-zero while checks are pending/failing but STILL prints the
+  # JSON — so `|| true` keeps the captured stdout (don't clobber it to ""). Only a
+  # genuinely empty result (a real gh/network failure) is treated as "not settled".
+  checks=$(gh pr checks $PR --repo $REPO --json name,bucket 2>/dev/null) || true
   if [ -n "$checks" ]; then
     # Count checks still pending, excluding human-gated approvers (tune the pattern).
     blocking=$(printf '%s' "$checks" |

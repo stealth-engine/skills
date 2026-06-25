@@ -30,7 +30,7 @@ behaviour snapshot).
 1. **Open or attach.** If asked to ship a change: branch (repo convention — see
    `AGENTS.md`/`CONTRIBUTING`), commit, push, open a PR with a **Conventional
    Commit** title (it becomes the squash commit). If a PR already exists for the
-   branch, **attach to it** and skip to step 3.
+   branch, **attach to it** and continue from step 2 (watch checks before triaging).
 2. **Watch checks.** Poll until checks **settle** — don't triage mid-run.
    "Settled" = no pending checks *except* human-gated approvers (e.g. a "PR
    approver" agent that waits for a human). See the playbook's poll recipe.
