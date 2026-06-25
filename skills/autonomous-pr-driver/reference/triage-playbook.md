@@ -40,19 +40,26 @@ human-gated approver. Run this in the background and act when it returns:
 ```bash
 settled=0
 for i in $(seq 1 50); do
-  out=$(gh pr checks $PR --repo $REPO 2>/dev/null)
-  pending=$(printf '%s\n' "$out" | grep -i 'pending' | grep -vci 'Approval Agent')
-  if [ "${pending:-0}" -eq 0 ]; then echo "settled"; printf '%s\n' "$out"; settled=1; break; fi
+  # Structured output (don't grep text); FAIL CLOSED — an errored/empty result is
+  # treated as "not settled" so a transient gh/network failure can't look settled.
+  checks=$(gh pr checks $PR --repo $REPO --json name,bucket 2>/dev/null) || checks=""
+  if [ -n "$checks" ]; then
+    # Count checks still pending, excluding human-gated approvers (tune the pattern).
+    blocking=$(printf '%s' "$checks" |
+      jq '[.[] | select(.bucket=="pending" and (.name|test("Approval Agent")|not))] | length')
+    if [ "${blocking:-1}" -eq 0 ]; then echo "settled"; gh pr checks $PR --repo $REPO; settled=1; break; fi
+  fi
   sleep 20
 done
-# Don't treat "ran out of budget" as success — surface the timeout so the loop
-# can decide (a check may be stuck/queued; investigate rather than triage blindly).
-[ "$settled" -eq 1 ] || { echo "TIMED OUT — checks never settled:"; printf '%s\n' "$out"; exit 1; }
+# Don't treat "ran out of budget" as success — surface the timeout so the loop can
+# decide (a check may be stuck/queued; investigate rather than triage blindly).
+[ "$settled" -eq 1 ] || { echo "TIMED OUT — checks never settled"; exit 1; }
 ```
 
-Tune the `grep -vci` exclusion to whatever human-gated/neutral checks your repo has
-(e.g. an approval agent that only passes on human review, or a bot that reports
-`skipping`). Those must not keep the loop spinning forever.
+`bucket` is one of `pass | fail | pending | skipping | cancel`. "Settled" = nothing
+**pending** (failed checks *have* finished — you triage those next). Tune the
+`test("Approval Agent")` exclusion to whatever human-gated checks your repo has (an
+approver that only passes on human review) so they don't spin the loop forever.
 
 ## Dedup by finding ID, never by line number
 
