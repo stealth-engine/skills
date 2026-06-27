@@ -189,16 +189,20 @@ EOF
 Hand off only when **all three** hold, all keyed on the **current HEAD SHA**, never
 on wall-clock:
 
-1. **Every expected reviewer has reported on the current HEAD** (query a — counting a
-   submitted review *or* an inline comment on HEAD, since some bots leave only inline
-   comments). A bot whose *check* is green may still be mid-comment, and work on a prior
-   commit doesn't count — wait for its review/comment on this SHA.
-2. **No unresolved review thread remains that verifies as still-valid on HEAD** —
-   enumerate **all** unresolved threads (query b), not a time/commit-filtered slice;
-   each must be fixed, rejected-with-reason, or confirmed stale by checking the file.
+1. **Every expected reviewer has reported on the current HEAD.** Don't assume the
+   **expected set** — capture it as the union of *(every login that has reviewed or
+   commented on this PR in any round)* ∪ *(every review bot that posts a check)*. Then
+   require each to have a submitted review **or** an inline comment on HEAD (query a —
+   some bots leave only inline comments). A bot whose *check* is green may still be
+   mid-comment, and work on a prior commit doesn't count.
+2. **No open finding remains untriaged on HEAD** — covering **both** sources: every
+   **unresolved review thread** (query b) *and* every finding posted as a **top-level
+   issue comment** (query c — these have no thread/resolve state, so track them by
+   stable id). Enumerate in full (no time/commit slice); each must be fixed,
+   rejected-with-reason, or confirmed stale by checking the file.
 3. **All required checks green.**
 
 Non-deterministic LLM reviewers keep emitting marginal/duplicate comments, so "zero
-open threads" isn't always reachable — but every unresolved thread must be *accounted
-for* (fixed/rejected/stale), never skipped because of when or which commit it sits on.
-Document rejected/stale items, then hand off.
+open findings" isn't always reachable — but every finding (thread **or** issue comment)
+must be *accounted for* (fixed/rejected/stale), never skipped because of when or which
+commit it sits on. Document rejected/stale items, then hand off.
