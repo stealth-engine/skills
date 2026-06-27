@@ -1,0 +1,55 @@
+name: Promote to production
+# [AUTOMATED] Fast-forwards a dedicated `production` branch to the just-released
+# commit, then lets your platform's NATIVE git integration deploy it.
+#
+# This is the portable "staging branch" gate (Pattern C): set your platform's
+# Production Branch to `production` (NOT `main`), so `main` deploys only previews/
+# staging on every merge, and prod ships only when this workflow advances
+# `production`. Works on any host with a configurable production branch
+# (Vercel, Netlify, Cloudflare Pages, …) — no platform CLI, no ignore script.
+#
+# Trigger: the published GitHub Release (created by semantic-release). A plain
+# push to `main` never touches `production`, so it never ships to prod.
+
+on:
+  release:
+    types: [published]
+
+# Serialize promotions so two releases can't race the production branch update.
+concurrency:
+  group: promote-production
+  cancel-in-progress: false # never half-apply a production promotion
+
+permissions:
+  contents: write # to push the production branch
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # need the released commit's history to fast-forward
+
+      - name: Fast-forward `production` to the released tag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          SHA="$(git rev-list -n1 "$TAG")"
+          echo "Promoting $TAG ($SHA) → production"
+          # Plain (non-force) push: `production` only ever receives fast-forwards
+          # from main, so it stays an ancestor of the release commit. If this is
+          # ever rejected as non-fast-forward, that's a real divergence to inspect,
+          # NOT something to --force past.
+          git push origin "${SHA}:refs/heads/production"
+
+# ── Setup (one-time) ─────────────────────────────────────────────────────────
+# 1. Create the branch once:  git branch production main && git push -u origin production
+# 2. Platform → Project → Git → set the *Production Branch* to `production`.
+#    `main` is now a preview/staging branch (deploys on every merge, but not prod).
+# 3. Token caveat (same as Pattern A): a Release created with the built-in
+#    GITHUB_TOKEN does NOT fire `on: release`. Have semantic-release run with a
+#    PAT/bot GH_TOKEN so its Release triggers this promotion.
+#    (The push here can use the default token — the platform's webhook, not a
+#    GitHub workflow, is what deploys, so it isn't subject to that restriction.)

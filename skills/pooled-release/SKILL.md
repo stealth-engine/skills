@@ -93,9 +93,13 @@ Start from `semantic-release-automation`'s `release.yml` and:
   job-level `if: github.ref_name == github.event.repository.default_branch`; keep it.
 - **Big gaps → big changelogs.** That's the point, but communicate the cadence so
   contributors know when their merged work actually ships.
-- **A pooled release can still gate a deploy** — pair with
-  [`production-release-gating`](../production-release-gating/SKILL.md) (deploy on the
-  published Release / the release commit), so prod ships on the train, not on merges.
+- **Pooling does NOT gate production deploys — wire that separately.** If a platform
+  (Vercel/Netlify) auto-deploys `main` on every push, it keeps shipping prod on every
+  *merge*, defeating the point of batching. Gate it with
+  [`production-release-gating`](../production-release-gating/SKILL.md) so prod ships on
+  the **train**, not on merges. The most portable gate is its **staging/`production`-
+  branch** model (Pattern C): `main` → staging on every merge, promote `production` to
+  the released commit to ship prod — no platform-specific script.
 - **Don't add `on: push` to the on-demand workflow without re-adding the loop guard.**
   With only `workflow_dispatch`/`schedule`, the `chore(release): …` commit can't
   re-trigger it (no guard needed). If you later add `on: push` (e.g. for hotfixes),
