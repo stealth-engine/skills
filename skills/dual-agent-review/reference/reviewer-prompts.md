@@ -15,7 +15,9 @@ does **not** edit). Give it the diff plus the changed files for context.
 > Base: `{{base}}` · Changed files: `{{file list}}`
 > Diff:
 > ```diff
-> {{git diff <base>...HEAD}}
+> {{the scoped diff from SKILL.md §1 — committed: `git diff <base>...HEAD`;
+>   uncommitted: `git diff` + `git diff --staged`. Use whichever scope you chose,
+>   and feed the SAME scope to Reviewer B.}}
 > ```
 >
 > Read the full changed files (and immediate callers) as needed for context, but
@@ -39,24 +41,36 @@ does **not** edit). Give it the diff plus the changed files for context.
 
 ## Reviewer B — CodeRabbit CLI
 
-Run inside a subagent (ideally `run_in_background` — reviews can take minutes).
-Confirm auth first; if it fails, report "CodeRabbit unavailable" and let the
-orchestrator proceed with the other reviewer(s).
+This invokes the **CodeRabbit CLI directly** — it does *not* depend on CodeRabbit's
+own `code-review` skill being installed, only on the `coderabbit` binary + auth. Run
+it inside a subagent (ideally `run_in_background` — reviews can take minutes). Confirm
+auth first; if it fails, report "CodeRabbit unavailable" and let the orchestrator
+proceed with the other reviewer(s).
+
+`{{type}}` below **must match the scope Reviewer A got** (§1): `committed`,
+`uncommitted`, or `all`. `--base` applies to `committed`/`all`; drop it for a purely
+`uncommitted` review.
 
 ```bash
 coderabbit auth status || { echo "CodeRabbit not authenticated"; exit 0; }
 
 # Structured output for agents (preferred — parse the JSON):
-coderabbit review --agent -t committed --base "{{base}}"
+coderabbit review --agent -t {{type}} --base "{{base}}"
 
 # Or detailed plain text:
-coderabbit review --plain -t committed --base "{{base}}"
+coderabbit review --plain -t {{type}} --base "{{base}}"
 ```
 
-- `-t` — review type: `all` | `committed` | `uncommitted` (match the diff you scoped).
-- `--base` — branch to compare against (e.g. `main`).
+- `-t` — review type: `all` | `committed` | `uncommitted` — **match the diff you scoped.**
+- `--base` — branch to compare against (e.g. `main`); omit for `uncommitted`.
 - `--agent` — structured JSON for agent/skill integrations; `--plain` — detailed text.
 - Flags evolve — run `coderabbit review --help` to confirm the current set before relying on it.
+
+**Alternative — delegate to CodeRabbit's own skill.** If [`coderabbitai/skills`](https://docs.coderabbit.ai/cli/skills)
+is installed, the subagent can instead trigger CodeRabbit's `code-review` skill in
+natural language ("review the {{type}} changes against {{base}}") and let it drive the
+CLI. That's less control over scope/output (so harder to dedupe), but stays current
+with CodeRabbit's own flags. The direct CLI call above is the default for this reason.
 
 CodeRabbit groups findings by **Critical / Warning / Info**; map those onto the same
 `{file, line, severity, claim, evidence, fix}` shape so they merge cleanly with

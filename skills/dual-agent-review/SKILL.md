@@ -138,7 +138,11 @@ unless the verify step actually passed.
 ## Setup (one-time)
 
 ```bash
-curl -fsSL https://cli.coderabbit.ai/install.sh | sh   # or: brew install coderabbitai/tap/coderabbit
+brew install coderabbitai/tap/coderabbit               # preferred
+# No Homebrew? Download and INSPECT the installer before running it — don't pipe
+# remote code straight into a shell:
+#   curl -fsSL https://cli.coderabbit.ai/install.sh -o install-coderabbit.sh
+#   less install-coderabbit.sh && sh install-coderabbit.sh
 coderabbit auth login
 coderabbit --version && coderabbit auth status         # verify
 ```
