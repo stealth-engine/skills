@@ -44,9 +44,10 @@ first two; it ships with `workflow_dispatch` on and `schedule` commented.
    then cut a batched **stable** release by promoting `next` → `main` **when you
    choose** (that promotion is the "pooling"). Notes:
    - This model is **push-triggered on the prerelease branch**, so it pairs with the
-     parent skill's `release.yml` set to `branches: [main, next]` — **not** the
-     on-demand workflow above (which would defeat the "continuous" part). The
-     `branches` config is in
+     parent skill's push-triggered `release.yml` (`on: push: [main, next]`) — **not**
+     the on-demand workflow above (which would defeat the "continuous" part). The
+     `branches: [main, next]` setting itself lives in the **semantic-release config**,
+     not the workflow — see
      [`templates/releaserc.prerelease-channels.json`](./templates/releaserc.prerelease-channels.json).
    - Channels are **independent** — a `next` and a `beta` channel don't flow into each
      other (no auto-promotion between them), so **pick one** unless you genuinely need
@@ -82,6 +83,10 @@ Start from `semantic-release-automation`'s `release.yml` and:
 - **`fetch-depth: 0` still required** (full history + tags for the batched analysis).
 - **`concurrency: { group: release }`** so a manual run and a scheduled run can't
   collide on the tag push.
+- **`workflow_dispatch` lets the runner pick any branch** — the Actions UI branch
+  dropdown (or `gh workflow run --ref <branch>`) means a manual run could analyze a
+  feature/prerelease branch instead of `main`. The template guards this with a
+  job-level `if: github.ref_name == github.event.repository.default_branch`; keep it.
 - **Big gaps → big changelogs.** That's the point, but communicate the cadence so
   contributors know when their merged work actually ships.
 - **A pooled release can still gate a deploy** — pair with
