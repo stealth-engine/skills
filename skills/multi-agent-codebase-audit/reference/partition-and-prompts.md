@@ -11,10 +11,10 @@ ledger.
 ## 1. Map the repo (commands)
 
 ```bash
-git ls-files | awk '{d=$0; sub("/[^/]*$","",d); print (d==$0?".":d)}' | sort | uniq -c | sort -rn | head -40  # files per dir (root → .)
+git ls-files | awk '{d=$0; sub("/[^/]*$","",d); print (d==$0?".":d)}' | sort | uniq -c | sort -rn  # ALL dirs (root → .) — no head cap; the ledger needs every dir
 scc --by-file --format wide --sort code . 2>/dev/null | head -30            # biggest files first (scc)
-find . -maxdepth 3 \( -name package.json -o -name go.mod -o -name pyproject.toml \
-  -o -name Cargo.toml \) -not -path '*/node_modules/*' 2>/dev/null          # module roots
+find . \( -name node_modules -o -name vendor -o -name .git \) -prune -o \   # module roots at ANY depth
+  \( -name package.json -o -name go.mod -o -name pyproject.toml -o -name Cargo.toml \) -print 2>/dev/null
 ```
 
 Use the output to choose slice boundaries and to seed the coverage ledger.

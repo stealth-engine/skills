@@ -86,11 +86,12 @@ The reduce step is where a whole-repo audit earns its keep:
   it came from two slices **or** from two auditor lenses on the *same* slice (e.g. the
   general and security passes both flag it) — dedupe both, like `dual-agent-review`
   dedupes across reviewers.
-- **Cross-cutting / architecture critic.** One pass over *all* slice findings **plus a
+- **Cross-cutting / architecture critic.** A pass over *all* slice findings **plus a
   global skim** (dependency manifests, the auth/trust surface, config/secrets, repeated
   patterns) to catch what's invisible slice-by-slice: layering violations, inconsistent
   patterns across modules, duplicated logic, a vuln class repeated everywhere, stale or
-  vulnerable dependencies, secrets in config.
+  vulnerable dependencies, secrets in config. **Re-run it whenever the completeness loop
+  adds slices/findings** — not just once (see the reference).
 - **Completeness critic.** Ask "what wasn't really covered?" — a slice that returned
   empty but is large (suspicious — re-audit it), a skipped directory, generated code, the
   test suite, CI/config. Queue another round for anything thin. **Loop until a round
