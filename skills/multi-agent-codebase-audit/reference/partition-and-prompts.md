@@ -14,12 +14,16 @@ ledger.
 # files-per-dir for ALL TRACKED files (root → .); no head cap — the ledger needs every dir.
 # (Tracked only; if the repo has untracked-but-unignored source, add it to the census.)
 git ls-files | awk '{d=$0; sub("/[^/]*$","",d); print (d==$0?".":d)}' | sort | uniq -c | sort -rn
-# LOC/complexity to size slices — fail LOUD if scc is missing, don't silently skip:
+# LOC/complexity to size slices — warn now if scc is missing (block fails closed below):
 if command -v scc >/dev/null; then scc --by-file --format wide --sort code . | head -30
-else echo "scc not installed — install it for sizing; aborting the census" >&2; false; fi  # nonzero (not exit 1, which would kill an interactive shell)
+else echo "scc not installed — install it for slice sizing" >&2; fi
 # module roots at ANY depth (prune vendor dirs):
 find . \( -name node_modules -o -name vendor -o -name .git \) -prune -o \
   \( -name package.json -o -name go.mod -o -name pyproject.toml -o -name Cargo.toml \) -print 2>/dev/null
+# Fail the WHOLE block closed if scc was missing. This is the LAST line, so it IS the
+# block's exit status — `false` here can't be overwritten by a later command, and it's
+# interactive-safe (unlike `exit 1`, which would kill a pasted-in shell):
+command -v scc >/dev/null || { echo "repo map INCOMPLETE: no size census (install scc)" >&2; false; }
 ```
 
 Use the output to choose slice boundaries and to seed the coverage ledger.
