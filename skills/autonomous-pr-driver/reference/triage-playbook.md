@@ -196,12 +196,15 @@ EOF
 Hand off only when **all three** hold, all keyed on the **current HEAD SHA**, never
 on wall-clock:
 
-1. **Every expected reviewer has reported on the current HEAD.** Don't assume the
-   **expected set** — capture it as the union of *(every login that has reviewed or
-   commented on this PR in any round)* ∪ *(every review bot that posts a check)*. Then
-   require each to have a submitted review **or** an inline comment on HEAD (query a —
-   some bots leave only inline comments). A bot whose *check* is green may still be
-   mid-comment, and work on a prior commit doesn't count.
+1. **Every expected reviewer has weighed in on the current HEAD.** The **expected set
+   is the per-push automated reviewers** — the bots that re-review every commit (those
+   posting a check on the PR, or that re-reviewed a prior push) — **not** every login
+   that ever commented. The reliable per-bot signal is its **check completing on HEAD**
+   (the settle-poll already waits for that) and/or a review, inline comment, **or**
+   issue comment on HEAD. **Do not block handoff on one-shot or human reviewers** who
+   won't re-post on each push — their input is captured as open findings in gate 2,
+   which you address regardless. A green check alone can precede the comments, so it's
+   never sufficient on its own — pair it with gate 2.
 2. **No open finding remains untriaged on HEAD** — covering **both** sources: every
    **unresolved review thread** (query b) *and* every finding posted as a **top-level
    issue comment** (query c — these have no thread/resolve state, so track them by

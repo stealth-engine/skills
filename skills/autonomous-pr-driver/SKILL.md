@@ -115,7 +115,7 @@ sentences), so the human reviewer has the reasoning on record.
 ## Convergence checklist
 
 - [ ] All **required** checks green (ignore neutral/skipped + human-gated approvers).
-- [ ] **Every expected reviewer has reported on the current HEAD SHA** (not an older commit) — expected set = reviewers seen on this PR ∪ check-posting bots; counts a review *or* an inline comment on HEAD.
+- [ ] **Every per-push automated reviewer has weighed in on the current HEAD SHA** — its check completed on HEAD and/or a review/inline/issue comment on HEAD; don't block on one-shot or human reviewers who won't re-post each push (their findings are covered by the next item).
 - [ ] **Every open finding triaged** — both unresolved review threads *and* top-level issue-comment findings, enumerated in full (not time/`commit_id`-filtered), each fixed / rejected / verified-stale-in-file.
 - [ ] Rejections each have a one-line reason comment.
 - [ ] Posted a final status summary and **pinged the human to merge** (or auto-merged
