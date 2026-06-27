@@ -2,9 +2,10 @@ name: Production Release
 # [AUTOMATED] Deploys to production when a GitHub Release is PUBLISHED.
 #
 # The GitHub Release (created by semantic-release) is the trigger — nothing
-# deploys on a plain push to main. Use this when YOU control the deploy workflow
-# (GKE, self-hosted, any dispatchable target). For platforms that force-deploy on
-# every push (Vercel), gate with the Ignored Build Step instead (see vercel-ignore.sh).
+# deploys on a plain push to main. This is the "Release-Triggered Deploy" gate; use
+# it when YOU control the deploy workflow (GKE, self-hosted, any dispatchable target,
+# or a platform CLI). On Vercel/Netlify you must also disable native push-deploy on
+# main (see the SKILL.md note), or prefer the Promotion Branch / Build-Skip Gate.
 
 on:
   release:

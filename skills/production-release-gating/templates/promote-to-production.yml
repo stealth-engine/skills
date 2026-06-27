@@ -2,7 +2,7 @@ name: Promote to production
 # [AUTOMATED] Fast-forwards a dedicated `production` branch to the just-released
 # commit, then lets your platform's NATIVE git integration deploy it.
 #
-# This is the portable "staging branch" gate (Pattern C): set your platform's
+# This is the portable "Promotion Branch" gate: set your platform's
 # Production Branch to `production` (NOT `main`), so `main` deploys only previews/
 # staging on every merge, and prod ships only when this workflow advances
 # `production`. Works on any host with a configurable production branch
@@ -48,7 +48,7 @@ jobs:
 # 1. Create the branch once:  git branch production main && git push -u origin production
 # 2. Platform → Project → Git → set the *Production Branch* to `production`.
 #    `main` is now a preview/staging branch (deploys on every merge, but not prod).
-# 3. Token caveat (same as Pattern A): a Release created with the built-in
+# 3. Token caveat (same as Release-Triggered Deploy): a Release created with the built-in
 #    GITHUB_TOKEN does NOT fire `on: release`. Have semantic-release run with a
 #    PAT/bot GH_TOKEN so its Release triggers this promotion.
 #    (The push here can use the default token — the platform's webhook, not a

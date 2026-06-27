@@ -97,9 +97,9 @@ Start from `semantic-release-automation`'s `release.yml` and:
   (Vercel/Netlify) auto-deploys `main` on every push, it keeps shipping prod on every
   *merge*, defeating the point of batching. Gate it with
   [`production-release-gating`](../production-release-gating/SKILL.md) so prod ships on
-  the **train**, not on merges. The most portable gate is its **staging/`production`-
-  branch** model (Pattern C): `main` → staging on every merge, promote `production` to
-  the released commit to ship prod — no platform-specific script.
+  the **train**, not on merges. The most portable gate is its **Promotion Branch**
+  model: `main` → staging on every merge, promote `production` to the released commit
+  to ship prod — no platform-specific script.
 - **Don't add `on: push` to the on-demand workflow without re-adding the loop guard.**
   With only `workflow_dispatch`/`schedule`, the `chore(release): …` commit can't
   re-trigger it (no guard needed). If you later add `on: push` (e.g. for hotfixes),

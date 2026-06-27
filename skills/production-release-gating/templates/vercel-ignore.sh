@@ -1,5 +1,5 @@
 #!/bin/bash
-# Vercel "Ignored Build Step". Wire it up via vercel.json:
+# "Build-Skip Gate" — Vercel's "Ignored Build Step". Wire it up via vercel.json:
 #   { "ignoreCommand": "bash ../../scripts/vercel-ignore.sh" }   # monorepo app
 # or Project Settings → Git → Ignored Build Step.
 #
