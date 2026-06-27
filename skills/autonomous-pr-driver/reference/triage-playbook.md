@@ -21,16 +21,23 @@ gh api repos/$REPO/pulls/$PR/reviews --paginate --jq \
 # was anchored to or when it was posted. THIS is the source of truth for "what's left
 # to triage", NOT a commit/time-filtered comment list. `isOutdated` = the thread's
 # code changed (a HINT it may be stale — still verify in the file, don't auto-skip).
-# The stable finding id is in the comment body (see the Dedup section). Paginate if >100.
-gh api graphql -f query='
-  query($owner:String!,$repo:String!,$pr:Int!){
+# --paginate + pageInfo/$endCursor walks ALL pages — `first:100` alone silently drops
+# threads past page 1 (the same drop-bug this recipe exists to avoid). Output carries
+# the stable id (from the comment body, for Dedup) and falls back line→originalLine for
+# outdated/re-anchored threads.
+gh api graphql --paginate -f query='
+  query($owner:String!,$repo:String!,$pr:Int!,$endCursor:String){
     repository(owner:$owner,name:$repo){ pullRequest(number:$pr){
-      reviewThreads(first:100){ nodes{
-        isResolved isOutdated path line
-        comments(first:1){ nodes{ author{login} body url } } } } } } }' \
+      reviewThreads(first:100, after:$endCursor){
+        pageInfo{ hasNextPage endCursor }
+        nodes{ isResolved isOutdated path line originalLine
+          comments(first:1){ nodes{ author{login} body url } } } } } } }' \
   -f owner=${REPO%/*} -f repo=${REPO#*/} -F pr=$PR \
   --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)
-        | "\(.comments.nodes[0].author.login) | \(.path):\(.line) | outdated=\(.isOutdated) | \(.comments.nodes[0].url)"'
+        | "\(.comments.nodes[0].author.login) | \(.path):\(.line // .originalLine) | outdated=\(.isOutdated) | "
+          + ( (.comments.nodes[0].body|capture("BUGBOT_BUG_ID: (?<id>[a-f0-9-]+)")?|.id)    # Cursor
+            // (.comments.nodes[0].body|capture("cr-comment:v1:(?<id>[A-Za-z0-9]+)")?|.id)  # CodeRabbit
+            // "n/a" )'
 
 # (c) Top-level (issue) comments — some bots post findings/summaries here; these have
 # NO thread/resolve state, so dedup them by stable id (next section), not by time.
