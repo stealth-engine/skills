@@ -49,9 +49,11 @@ Same checklist, two `save_issue` modes — **don't conflate them**:
 - **Create** (new issue): `save_issue` with **no `id`**. Fill everything below.
 - **Backfill** (existing bare issue): `save_issue` **WITH its `id`** — *update*, don't
   create. Omitting the `id` here would **make a duplicate**. `get_issue` first if you
-  need to see what's already set, then pass only the fields you're adding. Note
-  **`labels` replaces the whole set**, so include any existing labels alongside the new
-  ones (other fields you don't pass are left untouched).
+  need to see what's already set, then pass only the fields you're adding. **`labels`
+  replaces the whole set** — include existing labels alongside the new ones. Relations
+  (`blocks` / `blockedBy` / `relatedTo`) are **append-only** — adding one won't drop
+  existing links (use `removeBlocks` / `removeBlockedBy` / `removeRelatedTo` to remove).
+  Other fields you don't pass are left untouched.
 
 ## Metadata checklist — fill before `save_issue`
 
