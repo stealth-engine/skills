@@ -3,7 +3,7 @@ name: semantic-release-automation
 description: "Automate versioning, changelog, tags, GitHub Releases, and npm publishing from Conventional Commits with semantic-release. Use when setting up or debugging automated releases, wiring a `.releaserc` / `release` config and the plugin pipeline (commit-analyzer, release-notes-generator, changelog, npm, git, github), making `main` cut a version on merge, generating CHANGELOG.md, publishing to npm or creating a GitHub Release per release, doing per-package releases in a monorepo (per-package tags + paths-filter matrix), pooling commits into a less-frequent release, or fixing a release that didn't fire / a CI loop from the release commit. Covers the single-package and monorepo flavors and the GitHub Actions workflow."
 metadata:
   author: stealth-engine
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # semantic-release automation
@@ -140,6 +140,12 @@ semantic-release batches every commit since the last tag into one larger release
 no release branch needed. For continuous prereleases, add a `next`/`beta` branch to
 `branches` (channel releases) and fast-forward to `main` for the stable cut.
 
+This is the short version. For the **full treatment** — the manual / scheduled /
+prerelease-channel models, when a release branch is (rarely) worth it, the gotchas,
+and copy-paste workflow + channel-config templates — use the dedicated
+[`pooled-release`](../pooled-release/SKILL.md) skill (it reuses this exact pipeline;
+only the trigger changes).
+
 ## Gotchas
 
 - **Plugin order is the pipeline.** `commit-analyzer` → `notes` → `changelog` →
@@ -174,6 +180,9 @@ commits produce the bump you expect.
 
 - [`conventional-commits`](../conventional-commits/SKILL.md) — the input format
   that decides the version bump.
+- [`pooled-release`](../pooled-release/SKILL.md) — want fewer, batched releases
+  instead of one per merge? The "release train" variant — same pipeline, the trigger
+  changes (on-demand / scheduled / prerelease channels).
 - [`production-release-gating`](../production-release-gating/SKILL.md) — deploy only
   on a real release (the GitHub Release / `chore(release):` commit this produces).
 - [`git-trunk-branch-and-pr-automation`](../git-trunk-branch-and-pr-automation/SKILL.md)
