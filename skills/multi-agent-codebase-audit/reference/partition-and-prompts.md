@@ -11,7 +11,7 @@ ledger.
 ## 1. Map the repo (commands)
 
 ```bash
-git ls-files | sed 's|/[^/]*$||; t; s|.*|.|' | sort | uniq -c | sort -rn | head -40  # files per dir (root → .)
+git ls-files | awk '{d=$0; sub("/[^/]*$","",d); print (d==$0?".":d)}' | sort | uniq -c | sort -rn | head -40  # files per dir (root → .)
 scc --by-file --format wide --sort code . 2>/dev/null | head -30            # biggest files first (scc)
 find . -maxdepth 3 \( -name package.json -o -name go.mod -o -name pyproject.toml \
   -o -name Cargo.toml \) -not -path '*/node_modules/*' 2>/dev/null          # module roots
