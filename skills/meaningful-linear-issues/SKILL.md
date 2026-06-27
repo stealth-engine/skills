@@ -62,11 +62,11 @@ Same checklist, two `save_issue` modes — **don't conflate them**:
 | **title** | Imperative, specific, scannable. Lead with the verb + the object. |
 | **description** | The implementation detail (see [template](#description-template)). |
 | **priority** | `1` Urgent · `2` High · `3` Medium · `4` Low · `0` None. Infer from impact/urgency; default `3` for normal work, ask if it's clearly load-bearing. |
-| **estimate** | Set a real value. **It snaps to the team's scale** — e.g. passing `3` on a Fibonacci/exponential team may come back as `4 Points`; that's expected, not an error. Some teams **disable** estimates — if `save_issue` rejects it, drop the field. |
+| **estimate** | Set a real value; Linear **snaps it to the team's scale**, so you don't need the scale up front — but **read back and surface the stored value** (it may change: `3` on an *exponential* team `0,1,2,4,8,16` returns `4`; Fibonacci `0,1,2,3,5,8` keeps `3`). `get_team` doesn't expose the scale — infer it from existing issues' estimates (`list_issues`) only if you need exact pointing. Some teams **disable** estimates — if `save_issue` rejects it, drop the field. |
 | **labels** | Pick from the **existing taxonomy** (`list_issue_labels` for the team) — **don't invent labels**. Typically one **`Type`** (Feature / Bug / Improvement / Chore / Docs / Refactor / Security / Performance / Test / …) **and** one **`Area`** (the relevant module/domain). Match the repo's grouped labels rather than guessing names. |
 | **assignee** | `"me"`, the named owner, or the project/issue's usual owner (`list_users` to resolve a name/email). Don't leave unassigned if an owner is obvious. |
 | **milestone** | `list_milestones` for the project; attach if one fits the work. (None exist? skip — don't fabricate.) |
-| **cycle** | Often **auto-assigned** to the active cycle on create. Only set it explicitly (`list_cycles` → `current`) if you need a specific one. |
+| **cycle** | **Set the current cycle** (`list_cycles` → `current`) for active work unless the user opts out — **don't rely on auto-add**, which some teams disable, leaving the issue out of every cycle (and out of velocity). Skip only for backlog/future work that isn't for the current cycle. |
 | **relations** | `parentId` for sub-work; `blocks` / `blockedBy` for ordering; `relatedTo` for siblings. Link issues you reference in the description — it's cheap and powers dependency views. |
 
 If a field genuinely doesn't apply (e.g. no milestones exist), skip it **knowingly** —
@@ -79,7 +79,7 @@ Only the values you don't already have in context. These are the Linear MCP tool
 - `list_projects` (filter by name/team) — resolve the project.
 - `list_issue_labels` (by `team`) — the label taxonomy; reuse, don't invent.
 - `list_milestones` (by `project`) — fitting milestone, if any.
-- `list_cycles` (by `teamId`, `type: current`) — only if not auto-assigned.
+- `list_cycles` (by `teamId`, `type: current`) — to set the current cycle (don't rely on auto-add).
 - `list_users` (by name/email, or `"me"`) — resolve an assignee.
 - `list_teams` / `get_team` — when the team isn't obvious from the project.
 
@@ -109,13 +109,15 @@ Linear links them (and add them to `relatedTo`).
 ## Gotchas
 
 - **Don't guess the project** — the one unrecoverable mistake. Ask if unsure.
-- **Estimate snaps to the team's scale** (a passed `3` may store as `4 Points`); and
-  some teams disable estimates entirely — drop the field if it's rejected.
+- **Estimate snaps to the team's scale** (a passed `3` stores as `4` on an exponential
+  team) — **read back and surface the stored value** so the snap isn't silent; and some
+  teams disable estimates entirely — drop the field if it's rejected.
 - **Labels must already exist** — pull them from `list_issue_labels` and pass the
   exact names; creating ad-hoc labels pollutes the taxonomy. Prefer one Type + one Area.
 - **Milestone belongs to a project, cycle belongs to a team** — don't cross them; a
   milestone from another project will be rejected.
-- **Cycle is usually auto-set** on create — don't fight it unless you need a specific one.
+- **Don't rely on cycle auto-add** — some teams disable it, leaving the issue out of
+  every cycle. Set the current cycle explicitly; skip only for backlog/future work.
 - **One pass, not two** — if you're unsure of priority/estimate, pick a sensible value
   and *say so*; don't ship a bare issue and wait to be asked for the rest.
 
