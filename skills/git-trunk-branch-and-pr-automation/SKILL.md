@@ -94,6 +94,8 @@ checks (plus your release/CI checks) before a PR can merge.
   the squashed commit to cut the release.
 - [`production-release-gating`](../production-release-gating/SKILL.md) — deploys only
   the resulting release.
+- [`resolve-merge-conflicts`](../resolve-merge-conflicts/SKILL.md) — resolving the
+  conflicts/behind-base updates a branch hits before it can squash-merge.
 
 ## Sources
 
