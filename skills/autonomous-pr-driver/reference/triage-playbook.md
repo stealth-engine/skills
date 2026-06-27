@@ -10,12 +10,14 @@ need the exact `gh` calls or the finer judgment rules; the lifecycle overview is
 PR=123 ; REPO=owner/name
 export HEAD=$(gh pr view $PR --repo $REPO --json headRefOid --jq .headRefOid)
 
-# (a) Has each reviewer reviewed THE CURRENT HEAD? (a convergence gate — a review on
-# an older commit doesn't count.) --paginate: reviews come ~30/page oldest-first, so
-# HEAD's reviews are on the LAST page; without it a multi-round PR's current reviews
-# get missed. (jq/gojq read env.HEAD, so it must be exported, not a plain shell var.)
-gh api repos/$REPO/pulls/$PR/reviews --paginate --jq \
-  '.[] | select(.commit_id == env.HEAD) | "\(.user.login) [\(.state)] \(.submitted_at)"'
+# (a) Which reviewers have reported on THE CURRENT HEAD? (a convergence gate — work on
+# an older commit doesn't count.) Count BOTH submitted reviews AND inline review
+# comments anchored to HEAD: some bots leave only inline comments, no review record, so
+# reviews alone would never register them. --paginate walks all pages (reviews come
+# oldest-first, so HEAD's are on the LAST page). (jq/gojq read env.HEAD — export it.)
+{ gh api repos/$REPO/pulls/$PR/reviews  --paginate --jq '.[]|select(.commit_id==env.HEAD)|.user.login'
+  gh api repos/$REPO/pulls/$PR/comments --paginate --jq '.[]|select(.commit_id==env.HEAD)|.user.login'
+; } | sort -u   # the set of reviewers that have weighed in on the current HEAD
 
 # (b) OPEN FINDINGS = every UNRESOLVED review thread — regardless of which commit it
 # was anchored to or when it was posted. THIS is the source of truth for "what's left
@@ -37,7 +39,7 @@ gh api graphql --paginate -f query='
         | "\(.comments.nodes[0].author.login) | \(.path):\(.line // .originalLine) | outdated=\(.isOutdated) | "
           + ( (.comments.nodes[0].body|capture("BUGBOT_BUG_ID: (?<id>[a-f0-9-]+)")?|.id)    # Cursor
             // (.comments.nodes[0].body|capture("cr-comment:v1:(?<id>[A-Za-z0-9]+)")?|.id)  # CodeRabbit
-            // "n/a" )'
+            // (.path + "#" + (.comments.nodes[0].body|ltrimstr("\n")|split("\n")[0])[0:80]) )'  # stable fallback (no marker): file + first line, so unmarked comments don't look new each pass
 
 # (c) Top-level (issue) comments — some bots post findings/summaries here; these have
 # NO thread/resolve state, so dedup them by stable id (next section), not by time.
@@ -187,9 +189,10 @@ EOF
 Hand off only when **all three** hold, all keyed on the **current HEAD SHA**, never
 on wall-clock:
 
-1. **Every expected reviewer has reported on the current HEAD** (query a). A bot whose
-   *check* is green may still be mid-comment, and a review on a prior commit doesn't
-   count — wait for its review/comment on this SHA.
+1. **Every expected reviewer has reported on the current HEAD** (query a — counting a
+   submitted review *or* an inline comment on HEAD, since some bots leave only inline
+   comments). A bot whose *check* is green may still be mid-comment, and work on a prior
+   commit doesn't count — wait for its review/comment on this SHA.
 2. **No unresolved review thread remains that verifies as still-valid on HEAD** —
    enumerate **all** unresolved threads (query b), not a time/commit-filtered slice;
    each must be fixed, rejected-with-reason, or confirmed stale by checking the file.
