@@ -1,6 +1,6 @@
 ---
 name: meaningful-linear-issues
-description: "Create complete, analytics-ready Linear issues in ONE pass — resolve the right project (never guess it), and proactively fill the metadata that's technically optional but matters for planning/analytics: priority, estimate, labels (a Type + an Area from the team's existing taxonomy), milestone, assignee, cycle, and relations. Use when asked to 'create/file/open a Linear issue', 'log a ticket', 'add this to Linear', 'make an issue for X', or when creating an issue via Linear's save_issue (no `id`) — so the user doesn't have to come back and ask for the labels/estimate/project a second time. Also use to backfill missing metadata on a bare issue, or when an issue might land in the wrong project. NOT for routine updates to an existing issue (status changes, reassignments, edits) — those are also save_issue but don't need this."
+description: "Create complete, analytics-ready Linear issues in ONE pass — resolve the right project (never guess it), and proactively fill the metadata that's technically optional but matters for planning/analytics: priority, estimate, labels (a Type + an Area from the team's existing taxonomy), milestone, assignee, cycle, and relations. Use when asked to 'create/file/open a Linear issue', 'log a ticket', 'add this to Linear', 'make an issue for X', or before any Linear `save_issue` that **creates** an issue or **backfills** missing metadata on a bare one — so the user doesn't have to come back and ask for the labels/estimate/project a second time, and so an issue doesn't land in the wrong project. NOT for routine field edits (status changes, reassignments) — those are also `save_issue` but don't need this."
 metadata:
   author: stealth-engine
   version: "1.0.0"
@@ -41,6 +41,17 @@ unambiguous from the project, but resolve it the same way.
 3. **Create** with one `save_issue` call. If anything was genuinely a judgment call
    (estimate, priority), **state the values you chose** so the user can correct one —
    that's still one pass, not "I left them blank, ask me again."
+
+## Create vs. backfill — mind the `id`
+
+Same checklist, two `save_issue` modes — **don't conflate them**:
+
+- **Create** (new issue): `save_issue` with **no `id`**. Fill everything below.
+- **Backfill** (existing bare issue): `save_issue` **WITH its `id`** — *update*, don't
+  create. Omitting the `id` here would **make a duplicate**. `get_issue` first if you
+  need to see what's already set, then pass only the fields you're adding. Note
+  **`labels` replaces the whole set**, so include any existing labels alongside the new
+  ones (other fields you don't pass are left untouched).
 
 ## Metadata checklist — fill before `save_issue`
 
