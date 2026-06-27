@@ -45,8 +45,9 @@ identical change set**. Each scope maps to a CodeRabbit `-t` value (Reviewer B):
 
 - **`committed`** — PR / branch work: `git diff <base>...HEAD` (base is usually `main`).
 - **`uncommitted`** — working tree only: `git diff` + `git diff --staged`.
-- **`all`** — everything not yet released, committed *and* uncommitted, vs base:
-  `git diff <base>` (working tree compared to `<base>`).
+- **`all`** — everything the branch introduced, committed *and* uncommitted:
+  `git diff $(git merge-base <base> HEAD)` (working tree vs the **merge-base**, so it
+  stays stable if `<base>` advances — the same anchor the three-dot `committed` diff uses).
 
 Note the base and the list of changed files; you'll hand both to the reviewers.
 

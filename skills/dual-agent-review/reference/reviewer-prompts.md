@@ -16,7 +16,7 @@ does **not** edit). Give it the diff plus the changed files for context.
 > Diff:
 > ```diff
 > {{the scoped diff from SKILL.md §1 — committed: `git diff <base>...HEAD`;
->   uncommitted: `git diff` + `git diff --staged`; all: `git diff <base>`. Use
+>   uncommitted: `git diff` + `git diff --staged`; all: `git diff $(git merge-base <base> HEAD)`. Use
 >   whichever scope you chose, and feed the SAME scope (and `-t` value) to Reviewer B.}}
 > ```
 >
@@ -61,11 +61,11 @@ if ! coderabbit auth status >/dev/null 2>&1; then
   echo 'STATUS=coderabbit-unavailable reason=not-authenticated'; exit 0
 fi
 
-# Structured output for agents (preferred — parse the JSON):
+# committed or all — compare against a base (use --plain instead of --agent for text):
 coderabbit review --agent -t {{type}} --base "{{base}}"
 
-# Or detailed plain text:
-coderabbit review --plain -t {{type}} --base "{{base}}"
+# uncommitted — working tree only, NO --base:
+coderabbit review --agent -t uncommitted
 ```
 
 - `-t` — review type: `all` | `committed` | `uncommitted` — **match the diff you scoped.**
