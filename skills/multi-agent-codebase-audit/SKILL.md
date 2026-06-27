@@ -95,9 +95,10 @@ The reduce step is where a whole-repo audit earns its keep:
 - **Completeness critic.** Ask "what wasn't really covered?" — a slice that returned
   empty but is large (suspicious — re-audit it), a skipped directory, generated code, the
   test suite, CI/config. Queue another round for anything thin. **Loop until a round
-  surfaces nothing new** (loop-until-dry), not just once — but **cap the rounds** so a
-  non-converging critic can't loop forever; on hitting the cap, report the gaps (see
-  the reference).
+  surfaces nothing new** (loop-until-dry), not just once — but **cap it with an explicit
+  max-round / wall-clock / token budget** so a non-converging critic can't loop forever;
+  on hitting any cap, **stop and report the remaining gaps** in the ledger (see the
+  reference).
 
 ## 5. Triage → fix → report
 

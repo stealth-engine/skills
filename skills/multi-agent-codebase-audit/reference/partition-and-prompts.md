@@ -11,9 +11,14 @@ ledger.
 ## 1. Map the repo (commands)
 
 ```bash
-git ls-files | awk '{d=$0; sub("/[^/]*$","",d); print (d==$0?".":d)}' | sort | uniq -c | sort -rn  # ALL dirs (root → .) — no head cap; the ledger needs every dir
-scc --by-file --format wide --sort code . 2>/dev/null | head -30            # biggest files first (scc)
-find . \( -name node_modules -o -name vendor -o -name .git \) -prune -o \   # module roots at ANY depth
+# files-per-dir for ALL TRACKED files (root → .); no head cap — the ledger needs every dir.
+# (Tracked only; if the repo has untracked-but-unignored source, add it to the census.)
+git ls-files | awk '{d=$0; sub("/[^/]*$","",d); print (d==$0?".":d)}' | sort | uniq -c | sort -rn
+# LOC/complexity to size slices — fail LOUD if scc is missing, don't silently skip:
+if command -v scc >/dev/null; then scc --by-file --format wide --sort code . | head -30
+else echo "scc not installed — install it for sizing (don't skip the census silently)"; fi
+# module roots at ANY depth (prune vendor dirs):
+find . \( -name node_modules -o -name vendor -o -name .git \) -prune -o \
   \( -name package.json -o -name go.mod -o -name pyproject.toml -o -name Cargo.toml \) -print 2>/dev/null
 ```
 
