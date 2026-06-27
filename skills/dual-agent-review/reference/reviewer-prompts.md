@@ -126,5 +126,7 @@ Reviewers: Sonnet · CodeRabbit{{· extra lenses}}
 **Tally:** fixed {{n}} · rejected {{m}} · deferred {{k}} · verify: {{pass/fail + what ran}}
 ```
 
-Keep it honest: only list under **Fixed** what the verify step actually confirmed;
-everything else is **Deferred**.
+Keep it honest: only list under **Fixed** what the verify step actually confirmed. A
+finding you consciously declined goes under **Ignored / rejected** (with its reason); a
+real one you couldn't safely fix goes under **Deferred**. An *unverified* fix is
+**Deferred**, never **Fixed**.
