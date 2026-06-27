@@ -3,7 +3,7 @@ name: autonomous-pr-driver
 description: "Autonomously drive a pull request to merge-ready — opening or attaching to it, then resolving automated code review (triage findings, fix the valid, reject the invalid, push, repeat until green) and pinging a human to merge. Use when asked to 'drive / ship / land this PR', 'get the PR green', 'resolve the PR review comments', 'address the CodeRabbit / Cursor / Bugbot / Codex findings', 'fix the code review and push', or to loop on PR reviews until checks pass."
 metadata:
   author: stealth-engine
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Autonomous PR driver
@@ -34,13 +34,18 @@ behaviour snapshot).
 2. **Watch checks.** Poll until checks **settle** — don't triage mid-run.
    "Settled" = no pending checks *except* human-gated approvers (e.g. a "PR
    approver" agent that waits for a human). See the playbook's poll recipe.
-3. **Resolve reviews.** Fetch every review + inline comment, **triage each**
-   (below), **fix the valid ones** (commit + push), **reject the invalid ones with
-   a comment**, then go back to step 2 on the new commit.
-4. **Converge?** Done when **all required checks pass** *and* the latest round
-   produced **no new valid findings**. Stale re-posts and rejected/“wontfix” items
-   don't block. **Do not chase non-deterministic bots to zero comments** — they
-   re-post regardless. A green PR can still be **un-mergeable** — if it's behind base
+3. **Resolve reviews.** Enumerate **every open finding** — unresolved review threads
+   **and** top-level issue-comment findings — *not* a timestamp/poll-window or
+   `commit_id == HEAD` slice (both drop still-open findings anchored to an earlier
+   commit or posted just before your window; see the playbook). **Triage each** (below),
+   **fix the valid ones** (commit + push), **reject the invalid ones with a comment**,
+   then go back to step 2 on the new commit.
+4. **Converge?** Done — keyed on the **current HEAD SHA, never on the clock** — when
+   **all required checks pass**, **every expected reviewer has reported on the current
+   HEAD**, *and* **no open finding (thread or issue comment) remains valid on HEAD**.
+   Stale re-posts and
+   rejected/“wontfix” items don't block. **Do not chase non-deterministic bots to zero
+   comments** — they re-post regardless. A green PR can still be **un-mergeable** — if it's behind base
    or `mergeable=CONFLICTING` (`mergeStateStatus` `BEHIND`/`DIRTY`), update/rebase it
    per [`resolve-merge-conflicts`](../resolve-merge-conflicts/SKILL.md) (non-
    destructively; escalate if a conflict isn't safe to auto-resolve). That push
@@ -57,7 +62,9 @@ For each finding, decide one of three (full rules:
 - **Stale / already-fixed** → skip. **Dedup by the finding's stable ID, not its line
   number** — bots re-anchor the *same* finding to new lines on every push (Cursor
   `BUGBOT_BUG_ID`, CodeRabbit `fingerprint`/`cr-comment` IDs). Before skipping,
-  **verify it's actually fixed in the current file**.
+  **verify it's actually fixed in the current file**. Decide stale by **ID + the
+  file** — never by *when* a comment was posted or *which commit* it's anchored to;
+  those drop findings whose thread is still open.
 - **Valid** → fix it. But **verify-before-trust**: confirm the claim with a real
   check (a `node`/unit test, a regex run in a script file, a `gh api` lookup) rather
   than trusting the bot — or your own first guess. *(A bot once insisted
@@ -108,7 +115,8 @@ sentences), so the human reviewer has the reasoning on record.
 ## Convergence checklist
 
 - [ ] All **required** checks green (ignore neutral/skipped + human-gated approvers).
-- [ ] Latest round: **no new valid findings** (only stale re-posts / rejected items).
+- [ ] **Every per-push automated reviewer has weighed in on the current HEAD SHA** — its check completed on HEAD and/or a review/inline/issue comment on HEAD; don't block on one-shot or human reviewers who won't re-post each push (their findings are covered by the next item).
+- [ ] **Every open finding triaged** — both unresolved review threads *and* top-level issue-comment findings, enumerated in full (not time/`commit_id`-filtered), each fixed / rejected / verified-stale-in-file.
 - [ ] Rejections each have a one-line reason comment.
 - [ ] Posted a final status summary and **pinged the human to merge** (or auto-merged
       only if explicitly authorised).

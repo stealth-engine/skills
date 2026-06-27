@@ -8,32 +8,65 @@ need the exact `gh` calls or the finer judgment rules; the lifecycle overview is
 
 ```bash
 PR=123 ; REPO=owner/name
-# HEAD = the commit this round is about. Filter BOTH reviews and comments to it so
-# stale findings from older commits don't leak into triage. (jq/gojq both read
-# env.HEAD, so it must be exported, not just a shell var.)
 export HEAD=$(gh pr view $PR --repo $REPO --json headRefOid --jq .headRefOid)
 
-# Review bodies (top-level summaries) for THIS round — state + who.
-# --paginate: reviews come ~30/page oldest-first, so HEAD's reviews are on the LAST
-# page; without it a multi-round PR's current reviews get missed.
-gh api repos/$REPO/pulls/$PR/reviews --paginate --jq \
-  '.[] | select(.commit_id == env.HEAD) | "\(.user.login) [\(.state)] \(.submitted_at)"'
+# (a) Which reviewers have reported on THE CURRENT HEAD? (a convergence gate — work on
+# an older commit doesn't count.) Count BOTH submitted reviews AND inline review
+# comments anchored to HEAD: some bots leave only inline comments, no review record, so
+# reviews alone would never register them. --paginate walks all pages (reviews come
+# oldest-first, so HEAD's are on the LAST page). (jq/gojq read env.HEAD — export it.)
+{ gh api repos/$REPO/pulls/$PR/reviews  --paginate --jq '.[]|select(.commit_id==env.HEAD)|.user.login'
+  gh api repos/$REPO/pulls/$PR/comments --paginate --jq '.[]|select(.commit_id==env.HEAD)|.user.login'
+; } | sort -u   # the set of reviewers that have weighed in on the current HEAD
 
-# Inline comments on THIS round (HEAD), with the stable finding id.
-gh api repos/$REPO/pulls/$PR/comments --paginate --jq \
-  '.[] | select(.commit_id == env.HEAD)
-       | "\(.user.login) | \(.path):\(.line // .original_line) | "
-       + ( (.body|capture("BUGBOT_BUG_ID: (?<id>[a-f0-9-]+)")?|.id)      # Cursor
-         // (.body|capture("cr-comment:v1:(?<id>[A-Za-z0-9]+)")?|.id)    # CodeRabbit
-         // "n/a" )'
+# (b) OPEN FINDINGS = every UNRESOLVED review thread — regardless of which commit it
+# was anchored to or when it was posted. THIS is the source of truth for "what's left
+# to triage", NOT a commit/time-filtered comment list. `isOutdated` = the thread's
+# code changed (a HINT it may be stale — still verify in the file, don't auto-skip).
+# --paginate + pageInfo/$endCursor walks ALL pages — `first:100` alone silently drops
+# threads past page 1 (the same drop-bug this recipe exists to avoid). Output carries
+# the stable id (from the comment body, for Dedup) and falls back line→originalLine for
+# outdated/re-anchored threads.
+gh api graphql --paginate -f query='
+  query($owner:String!,$repo:String!,$pr:Int!,$endCursor:String){
+    repository(owner:$owner,name:$repo){ pullRequest(number:$pr){
+      reviewThreads(first:100, after:$endCursor){
+        pageInfo{ hasNextPage endCursor }
+        nodes{ isResolved isOutdated path line originalLine
+          comments(first:1){ nodes{ author{login} body url } } } } } } }' \
+  -f owner=${REPO%/*} -f repo=${REPO#*/} -F pr=$PR \
+  --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)
+        | "\(.comments.nodes[0].author.login) | \(.path):\(.line // .originalLine) | outdated=\(.isOutdated) | "
+          + ( (.comments.nodes[0].body|capture("BUGBOT_BUG_ID: (?<id>[a-f0-9-]+)")?|.id)    # Cursor
+            // (.comments.nodes[0].body|capture("cr-comment:v1:(?<id>[A-Za-z0-9]+)")?|.id)  # CodeRabbit
+            // (.path + "#" + (.comments.nodes[0].body|ltrimstr("\n")|split("\n")[0])[0:80]) )'  # stable fallback (no marker): file + first line, so unmarked comments don't look new each pass
 
-# Top-level (issue) comments — bots post summaries/replies here too.
-gh api repos/$REPO/issues/$PR/comments --paginate --jq '.[] | "\(.user.login) \(.created_at)"'
+# (c) Top-level (issue) comments — some bots post findings/summaries here; these have
+# NO thread/resolve state, so dedup them by stable id (next section), not by time.
+# FILTER OUT non-findings so they don't re-enter triage forever: your OWN rejection/
+# status replies (set ME to the account this loop posts as) and bot summary/linkback
+# comments (no actionable finding). Emit id (or first-line fallback) + body preview.
+export ME=your-bot-or-username   # <-- the login this loop comments as; skip its own posts
+gh api repos/$REPO/issues/$PR/comments --paginate --jq \
+  '.[] | select(.user.login != env.ME)
+       | select(.body | test("linear-linkback|auto-generated comment: summarize"; "i") | not)
+       | "\(.user.login) | "
+       + ( (.body|capture("BUGBOT_BUG_ID: (?<id>[a-f0-9-]+)")?|.id)
+         // (.body|capture("cr-comment:v1:(?<id>[A-Za-z0-9]+)")?|.id)
+         // (.body|ltrimstr("\n")|split("\n")[0])[0:80] )
+       + " | " + (.body[0:200])'
 
-# Check rollup + mergeability.
+# (d) Check rollup + mergeability.
 gh pr checks $PR --repo $REPO
 gh pr view  $PR --repo $REPO --json mergeable,mergeStateStatus,state,reviewDecision
 ```
+
+> **Never scope OPEN findings by timestamp or by `commit_id == HEAD`.** Both silently
+> drop a finding anchored to an *earlier* commit (or posted just before your poll
+> window) whose thread is still **unresolved** — the exact way a real review gets
+> missed and the PR is called green with an open issue. Enumerate **all unresolved
+> threads** (query b); decide stale-vs-valid by **stable id + verifying the current
+> file**, never by when or which commit the comment sits on.
 
 > Big comment bodies can exceed tool output limits — pipe through `jq` slices
 > (`.body[0:400]`) or strip HTML `<details>` blocks before reading.
@@ -164,7 +197,26 @@ EOF
 
 ## Convergence — the honest definition
 
-All **required** checks green **and** the latest round surfaced **no new valid
-findings**. Non-deterministic LLM reviewers will keep emitting marginal/duplicate
-comments forever; "zero open comments" is not the bar. Document rejected/stale items,
-then hand off.
+Hand off only when **all three** hold, all keyed on the **current HEAD SHA**, never
+on wall-clock:
+
+1. **Every expected reviewer has weighed in on the current HEAD.** The **expected set
+   is the per-push automated reviewers** — the bots that re-review every commit (those
+   posting a check on the PR, or that re-reviewed a prior push) — **not** every login
+   that ever commented. The reliable per-bot signal is its **check completing on HEAD**
+   (the settle-poll already waits for that) and/or a review, inline comment, **or**
+   issue comment on HEAD. **Do not block handoff on one-shot or human reviewers** who
+   won't re-post on each push — their input is captured as open findings in gate 2,
+   which you address regardless. A green check alone can precede the comments, so it's
+   never sufficient on its own — pair it with gate 2.
+2. **No open finding remains untriaged on HEAD** — covering **both** sources: every
+   **unresolved review thread** (query b) *and* every finding posted as a **top-level
+   issue comment** (query c — these have no thread/resolve state, so track them by
+   stable id). Enumerate in full (no time/commit slice); each must be fixed,
+   rejected-with-reason, or confirmed stale by checking the file.
+3. **All required checks green.**
+
+Non-deterministic LLM reviewers keep emitting marginal/duplicate comments, so "zero
+open findings" isn't always reachable — but every finding (thread **or** issue comment)
+must be *accounted for* (fixed/rejected/stale), never skipped because of when or which
+commit it sits on. Document rejected/stale items, then hand off.
