@@ -34,14 +34,16 @@ behaviour snapshot).
 2. **Watch checks.** Poll until checks **settle** — don't triage mid-run.
    "Settled" = no pending checks *except* human-gated approvers (e.g. a "PR
    approver" agent that waits for a human). See the playbook's poll recipe.
-3. **Resolve reviews.** Enumerate **every unresolved review thread** — *not* a
-   timestamp/poll-window or `commit_id == HEAD` slice (both drop still-open findings
-   anchored to an earlier commit or posted just before your window; see the playbook).
-   **Triage each** (below), **fix the valid ones** (commit + push), **reject the
-   invalid ones with a comment**, then go back to step 2 on the new commit.
+3. **Resolve reviews.** Enumerate **every open finding** — unresolved review threads
+   **and** top-level issue-comment findings — *not* a timestamp/poll-window or
+   `commit_id == HEAD` slice (both drop still-open findings anchored to an earlier
+   commit or posted just before your window; see the playbook). **Triage each** (below),
+   **fix the valid ones** (commit + push), **reject the invalid ones with a comment**,
+   then go back to step 2 on the new commit.
 4. **Converge?** Done — keyed on the **current HEAD SHA, never on the clock** — when
    **all required checks pass**, **every expected reviewer has reported on the current
-   HEAD**, *and* **no unresolved thread remains valid on HEAD**. Stale re-posts and
+   HEAD**, *and* **no open finding (thread or issue comment) remains valid on HEAD**.
+   Stale re-posts and
    rejected/“wontfix” items don't block. **Do not chase non-deterministic bots to zero
    comments** — they re-post regardless. A green PR can still be **un-mergeable** — if it's behind base
    or `mergeable=CONFLICTING` (`mergeStateStatus` `BEHIND`/`DIRTY`), update/rebase it

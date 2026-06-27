@@ -43,7 +43,14 @@ gh api graphql --paginate -f query='
 
 # (c) Top-level (issue) comments — some bots post findings/summaries here; these have
 # NO thread/resolve state, so dedup them by stable id (next section), not by time.
-gh api repos/$REPO/issues/$PR/comments --paginate --jq '.[] | "\(.user.login) \(.created_at)"'
+# Emit the id (or first-line fallback) + a body preview so these findings can actually
+# be triaged, not just counted — convergence requires triaging them too.
+gh api repos/$REPO/issues/$PR/comments --paginate --jq \
+  '.[] | "\(.user.login) | "
+       + ( (.body|capture("BUGBOT_BUG_ID: (?<id>[a-f0-9-]+)")?|.id)
+         // (.body|capture("cr-comment:v1:(?<id>[A-Za-z0-9]+)")?|.id)
+         // (.body|ltrimstr("\n")|split("\n")[0])[0:80] )
+       + " | " + (.body[0:200])'
 
 # (d) Check rollup + mergeability.
 gh pr checks $PR --repo $REPO
