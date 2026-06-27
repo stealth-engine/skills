@@ -45,14 +45,21 @@ This invokes the **CodeRabbit CLI directly** — it does *not* depend on CodeRab
 own `code-review` skill being installed, only on the `coderabbit` binary + auth. Run
 it inside a subagent (ideally `run_in_background` — reviews can take minutes). Confirm
 auth first; if it fails, report "CodeRabbit unavailable" and let the orchestrator
-proceed with the other reviewer(s).
+proceed with the other reviewer(s). Report unavailability **distinctly from an empty
+result** — an absent Reviewer B must not be counted as a clean pass (that would hide a
+reviewer that never ran).
 
 `{{type}}` below **must match the scope Reviewer A got** (§1): `committed`,
 `uncommitted`, or `all`. `--base` applies to `committed`/`all`; drop it for a purely
 `uncommitted` review.
 
 ```bash
-coderabbit auth status || { echo "CodeRabbit not authenticated"; exit 0; }
+# Auth gate. UNAVAILABLE is a distinct outcome from "reviewed, no findings" — emit a
+# clear status marker, never an empty `[]` (which the orchestrator would read as a
+# clean review), so Reviewer B is counted as absent, not passing.
+if ! coderabbit auth status >/dev/null 2>&1; then
+  echo 'STATUS=coderabbit-unavailable reason=not-authenticated'; exit 0
+fi
 
 # Structured output for agents (preferred — parse the JSON):
 coderabbit review --agent -t {{type}} --base "{{base}}"
