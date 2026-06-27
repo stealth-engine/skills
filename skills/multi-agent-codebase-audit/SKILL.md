@@ -34,7 +34,7 @@ template live in [`reference/partition-and-prompts.md`](./reference/partition-an
 1. MAP repo ─► 2. PARTITION (slices that fit a context) ─► 3. FAN OUT auditors (parallel/bg)
                                                                     │ one+ per slice
                                                                     ▼
-6. REPORT + ledger ◄─ 5. TRIAGE → FIX ◄─ 4. REDUCE (dedupe + cross-cutting critic + completeness)
+5. TRIAGE → FIX → REPORT + ledger ◄─ 4. REDUCE (dedupe + cross-cutting critic + completeness)
 ```
 
 ## 1. Map the repo

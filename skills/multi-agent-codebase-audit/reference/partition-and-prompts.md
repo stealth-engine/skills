@@ -11,8 +11,8 @@ ledger.
 ## 1. Map the repo (commands)
 
 ```bash
-git ls-files | sed 's|/[^/]*$||' | sort | uniq -c | sort -rn | head -40   # files per dir
-scc --by-file --format wide . 2>/dev/null | tail -30                       # LOC/complexity (scc)
+git ls-files | sed 's|/[^/]*$||; t; s|.*|.|' | sort | uniq -c | sort -rn | head -40  # files per dir (root → .)
+scc --by-file --format wide --sort code . 2>/dev/null | head -30            # biggest files first (scc)
 find . -maxdepth 3 \( -name package.json -o -name go.mod -o -name pyproject.toml \
   -o -name Cargo.toml \) -not -path '*/node_modules/*' 2>/dev/null          # module roots
 ```
@@ -85,9 +85,11 @@ Run once, after slice findings are in:
 > slice**. Return `{ "reaudit": [], "newSlices": [], "covered": true|false }`.
 
 Loop steps 3–5 until the completeness critic returns `covered: true` **and** a round
-adds nothing new (loop-until-dry) — but **cap the rounds** (e.g. 3). A flaky or
-non-converging critic must not loop forever; if the cap is hit before `covered: true`,
-**stop and record the remaining gaps in the ledger** rather than burning time/budget.
+adds nothing new (loop-until-dry) — but **cap it on BOTH a round count (e.g. 3) and a
+hard budget** (wall-clock, tokens, or slices audited), so it can't run away even if each
+pass keeps surfacing small changes. A flaky or non-converging critic must not loop
+forever; if any cap is hit before `covered: true`, **stop and record the remaining gaps
+in the ledger** rather than burning time/budget.
 
 ---
 
