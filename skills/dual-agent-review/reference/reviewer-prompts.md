@@ -61,11 +61,10 @@ if ! coderabbit auth status >/dev/null 2>&1; then
   echo 'STATUS=coderabbit-unavailable reason=not-authenticated'; exit 0
 fi
 
-# committed or all — compare against a base (use --plain instead of --agent for text):
-coderabbit review --agent -t {{type}} --base "{{base}}"
-
-# uncommitted — working tree only, NO --base:
-coderabbit review --agent -t uncommitted
+# ONE review, scoped to {{type}} (committed|uncommitted|all). --base is included for
+# committed/all and omitted for uncommitted. Swap --agent for --plain for text output.
+base_flag=""; [ "{{type}}" = uncommitted ] || base_flag="--base {{base}}"
+coderabbit review --agent -t {{type}} $base_flag
 ```
 
 - `-t` — review type: `all` | `committed` | `uncommitted` — **match the diff you scoped.**
@@ -106,7 +105,7 @@ once** (partition by file or give each an isolated worktree).
 
 ```markdown
 ## Dual-agent review — {{base}}...HEAD ({{N}} files)
-Reviewers: Sonnet · CodeRabbit{{· extra lenses}}
+Reviewers: Sonnet · CodeRabbit{{· extra lenses}}   ({{mark any that were UNAVAILABLE — e.g. "CodeRabbit: unavailable (not authenticated)" — so the reader knows it didn't run}})
 
 ### ✅ Fixed ({{count}})
 - **{{file}}:{{line}}** — {{claim}} _(flagged by: {{A/B/both}})_

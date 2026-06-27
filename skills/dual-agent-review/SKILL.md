@@ -77,6 +77,10 @@ code.
 
 Merge all reviewers' findings, then:
 
+- **Account for absent reviewers first.** If a reviewer returned an unavailable marker
+  (e.g. `STATUS=coderabbit-unavailable`) rather than findings, record it as **absent** —
+  never as a clean pass — and carry that into the report (so the result isn't read as
+  "both reviewers agreed" when one never ran).
 - **Dedupe across reviewers.** The same defect reported by A and B is **one** issue
   (match on file + line range + claim, not exact wording). Note when **both** flagged
   it — agreement raises confidence; a lone flag warrants more scrutiny.
