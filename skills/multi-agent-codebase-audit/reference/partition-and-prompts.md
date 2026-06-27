@@ -16,7 +16,7 @@ ledger.
 git ls-files | awk '{d=$0; sub("/[^/]*$","",d); print (d==$0?".":d)}' | sort | uniq -c | sort -rn
 # LOC/complexity to size slices — fail LOUD if scc is missing, don't silently skip:
 if command -v scc >/dev/null; then scc --by-file --format wide --sort code . | head -30
-else echo "scc not installed — install it for sizing (don't skip the census silently)"; fi
+else echo "scc not installed — install it for sizing; aborting the census" >&2; false; fi  # nonzero (not exit 1, which would kill an interactive shell)
 # module roots at ANY depth (prune vendor dirs):
 find . \( -name node_modules -o -name vendor -o -name .git \) -prune -o \
   \( -name package.json -o -name go.mod -o -name pyproject.toml -o -name Cargo.toml \) -print 2>/dev/null
