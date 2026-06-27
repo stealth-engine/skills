@@ -113,7 +113,7 @@ Linear links them (and add them to `relatedTo`).
 - [ ] **Project resolved** (from context/confirmed/asked) — **not** guessed.
 - [ ] Team set; title imperative + specific; description has context + scope + acceptance.
 - [ ] Priority set; estimate set (or knowingly skipped if the team disables it).
-- [ ] Labels: a **Type** + an **Area** from the existing taxonomy (not invented).
+- [ ] Labels: a **Type** (always) + an **Area** *if one fits* — from the existing taxonomy, not invented.
 - [ ] Assignee set (or deliberately left for triage); milestone attached if one fits.
 - [ ] Relations linked for any issues/PRs referenced.
 - [ ] Anything you judged (priority/estimate) stated back to the user in your reply.
