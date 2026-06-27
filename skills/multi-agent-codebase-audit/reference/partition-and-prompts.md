@@ -13,8 +13,8 @@ ledger.
 ```bash
 git ls-files | sed 's|/[^/]*$||' | sort | uniq -c | sort -rn | head -40   # files per dir
 scc --by-file --format wide . 2>/dev/null | tail -30                       # LOC/complexity (scc)
-find . -maxdepth 3 -name package.json -o -name go.mod -o -name pyproject.toml \
-  -o -name Cargo.toml 2>/dev/null | grep -v node_modules                   # module roots
+find . -maxdepth 3 \( -name package.json -o -name go.mod -o -name pyproject.toml \
+  -o -name Cargo.toml \) -not -path '*/node_modules/*' 2>/dev/null          # module roots
 ```
 
 Use the output to choose slice boundaries and to seed the coverage ledger.
@@ -57,6 +57,8 @@ Spawn per slice (model `sonnet` or stronger), read-only (returns findings; no ed
 **Second lens (high-risk slices)** — same shape, swap the focus:
 - *Security:* "Focus only on the trust boundary: authn/authz, injection, SSRF, secrets,
   unsafe deserialization, path traversal, and untrusted-input flow."
+- *Performance:* "Focus only on scalability: N+1 queries, unbounded loops/allocations,
+  blocking I/O on hot paths, missing caching/pagination, and accidental O(n²)."
 
 ---
 
@@ -83,7 +85,9 @@ Run once, after slice findings are in:
 > slice**. Return `{ "reaudit": [], "newSlices": [], "covered": true|false }`.
 
 Loop steps 3–5 until the completeness critic returns `covered: true` **and** a round
-adds nothing new (loop-until-dry).
+adds nothing new (loop-until-dry) — but **cap the rounds** (e.g. 3). A flaky or
+non-converging critic must not loop forever; if the cap is hit before `covered: true`,
+**stop and record the remaining gaps in the ledger** rather than burning time/budget.
 
 ---
 
