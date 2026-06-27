@@ -82,7 +82,10 @@ Auditors return data; they do **not** edit code.
 
 The reduce step is where a whole-repo audit earns its keep:
 
-- **Dedupe across slices.** The same issue surfaced from two slices is one finding.
+- **Dedupe across slices *and across lenses*.** The same issue is one finding whether
+  it came from two slices **or** from two auditor lenses on the *same* slice (e.g. the
+  general and security passes both flag it) — dedupe both, like `dual-agent-review`
+  dedupes across reviewers.
 - **Cross-cutting / architecture critic.** One pass over *all* slice findings **plus a
   global skim** (dependency manifests, the auth/trust surface, config/secrets, repeated
   patterns) to catch what's invisible slice-by-slice: layering violations, inconsistent

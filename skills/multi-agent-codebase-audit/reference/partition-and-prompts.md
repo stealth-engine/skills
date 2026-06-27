@@ -64,7 +64,10 @@ Spawn per slice (model `sonnet` or stronger), read-only (returns findings; no ed
 
 ## 4. Cross-cutting / architecture critic
 
-Run once, after slice findings are in:
+Run after each reduce pass over the **full merged finding set so far** — and **re-run
+it** whenever a completeness loop (step 5) adds slices or findings, so cross-cutting
+issues in the newly-audited code aren't missed. (Once is enough only if the loop never
+re-audits.) Prompt:
 
 > You are the architecture critic for a whole-repo audit. Here are all per-slice
 > findings: `{{merged findings}}`. Here is the global surface: `{{dependency
