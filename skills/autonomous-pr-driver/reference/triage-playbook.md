@@ -8,32 +8,45 @@ need the exact `gh` calls or the finer judgment rules; the lifecycle overview is
 
 ```bash
 PR=123 ; REPO=owner/name
-# HEAD = the commit this round is about. Filter BOTH reviews and comments to it so
-# stale findings from older commits don't leak into triage. (jq/gojq both read
-# env.HEAD, so it must be exported, not just a shell var.)
 export HEAD=$(gh pr view $PR --repo $REPO --json headRefOid --jq .headRefOid)
 
-# Review bodies (top-level summaries) for THIS round — state + who.
-# --paginate: reviews come ~30/page oldest-first, so HEAD's reviews are on the LAST
-# page; without it a multi-round PR's current reviews get missed.
+# (a) Has each reviewer reviewed THE CURRENT HEAD? (a convergence gate — a review on
+# an older commit doesn't count.) --paginate: reviews come ~30/page oldest-first, so
+# HEAD's reviews are on the LAST page; without it a multi-round PR's current reviews
+# get missed. (jq/gojq read env.HEAD, so it must be exported, not a plain shell var.)
 gh api repos/$REPO/pulls/$PR/reviews --paginate --jq \
   '.[] | select(.commit_id == env.HEAD) | "\(.user.login) [\(.state)] \(.submitted_at)"'
 
-# Inline comments on THIS round (HEAD), with the stable finding id.
-gh api repos/$REPO/pulls/$PR/comments --paginate --jq \
-  '.[] | select(.commit_id == env.HEAD)
-       | "\(.user.login) | \(.path):\(.line // .original_line) | "
-       + ( (.body|capture("BUGBOT_BUG_ID: (?<id>[a-f0-9-]+)")?|.id)      # Cursor
-         // (.body|capture("cr-comment:v1:(?<id>[A-Za-z0-9]+)")?|.id)    # CodeRabbit
-         // "n/a" )'
+# (b) OPEN FINDINGS = every UNRESOLVED review thread — regardless of which commit it
+# was anchored to or when it was posted. THIS is the source of truth for "what's left
+# to triage", NOT a commit/time-filtered comment list. `isOutdated` = the thread's
+# code changed (a HINT it may be stale — still verify in the file, don't auto-skip).
+# The stable finding id is in the comment body (see the Dedup section). Paginate if >100.
+gh api graphql -f query='
+  query($owner:String!,$repo:String!,$pr:Int!){
+    repository(owner:$owner,name:$repo){ pullRequest(number:$pr){
+      reviewThreads(first:100){ nodes{
+        isResolved isOutdated path line
+        comments(first:1){ nodes{ author{login} body url } } } } } } }' \
+  -f owner=${REPO%/*} -f repo=${REPO#*/} -F pr=$PR \
+  --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)
+        | "\(.comments.nodes[0].author.login) | \(.path):\(.line) | outdated=\(.isOutdated) | \(.comments.nodes[0].url)"'
 
-# Top-level (issue) comments — bots post summaries/replies here too.
+# (c) Top-level (issue) comments — some bots post findings/summaries here; these have
+# NO thread/resolve state, so dedup them by stable id (next section), not by time.
 gh api repos/$REPO/issues/$PR/comments --paginate --jq '.[] | "\(.user.login) \(.created_at)"'
 
-# Check rollup + mergeability.
+# (d) Check rollup + mergeability.
 gh pr checks $PR --repo $REPO
 gh pr view  $PR --repo $REPO --json mergeable,mergeStateStatus,state,reviewDecision
 ```
+
+> **Never scope OPEN findings by timestamp or by `commit_id == HEAD`.** Both silently
+> drop a finding anchored to an *earlier* commit (or posted just before your poll
+> window) whose thread is still **unresolved** — the exact way a real review gets
+> missed and the PR is called green with an open issue. Enumerate **all unresolved
+> threads** (query b); decide stale-vs-valid by **stable id + verifying the current
+> file**, never by when or which commit the comment sits on.
 
 > Big comment bodies can exceed tool output limits — pipe through `jq` slices
 > (`.body[0:400]`) or strip HTML `<details>` blocks before reading.
@@ -164,7 +177,18 @@ EOF
 
 ## Convergence — the honest definition
 
-All **required** checks green **and** the latest round surfaced **no new valid
-findings**. Non-deterministic LLM reviewers will keep emitting marginal/duplicate
-comments forever; "zero open comments" is not the bar. Document rejected/stale items,
-then hand off.
+Hand off only when **all three** hold, all keyed on the **current HEAD SHA**, never
+on wall-clock:
+
+1. **Every expected reviewer has reported on the current HEAD** (query a). A bot whose
+   *check* is green may still be mid-comment, and a review on a prior commit doesn't
+   count — wait for its review/comment on this SHA.
+2. **No unresolved review thread remains that verifies as still-valid on HEAD** —
+   enumerate **all** unresolved threads (query b), not a time/commit-filtered slice;
+   each must be fixed, rejected-with-reason, or confirmed stale by checking the file.
+3. **All required checks green.**
+
+Non-deterministic LLM reviewers keep emitting marginal/duplicate comments, so "zero
+open threads" isn't always reachable — but every unresolved thread must be *accounted
+for* (fixed/rejected/stale), never skipped because of when or which commit it sits on.
+Document rejected/stale items, then hand off.
