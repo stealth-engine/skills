@@ -66,6 +66,20 @@ nothing.
 - **A → vs the platform's own git deploy:** use Pattern A's CLI when you want CI to
   *own* the prod deploy. If you'd rather keep the platform's **native** git
   integration and just gate which branch it watches, that's **Pattern C** instead.
+- **⚠️ If the platform has native git auto-deploy (Vercel/Netlify), DISABLE its
+  default-branch prod deploy — or you double-ship.** Pattern A's CI deploy is in
+  *addition* to the platform's automatic push deploy, so without this the platform
+  still ships prod on every merge to `main`. Two ways:
+  - **Vercel** — `vercel.json`:
+    `{ "git": { "deploymentEnabled": { "main": false } } }` stops Vercel deploying
+    `main` (other branches still get previews; CI's `--prebuilt --prod` is unaffected).
+    Or Project → Settings → Git → turn off the production branch's auto-deploy.
+  - **Netlify** — `netlify.toml` `[context.production] command = "exit 0"` (or "Stop
+    auto publishing" / lock the production deploy) so pushes to the prod branch don't
+    auto-build; CLI deploys still publish.
+  - **Or reuse the ignore step inverted:** point [`vercel-ignore.sh`](./templates/vercel-ignore.sh)
+    at this app but make `main` **always skip** (CI owns prod) while feature branches
+    still build previews — the same script, the opposite verdict on `main`.
 - **Token caveat:** a Release created with the built-in `GITHUB_TOKEN` will **not**
   trigger `on: release`. Have semantic-release run with a **PAT/bot `GH_TOKEN`** so
   its Release fires this workflow. (See `semantic-release-automation` → token notes.)
@@ -120,6 +134,11 @@ a configurable production branch.
   Gating previews defeats the workflow.
 - **Pattern A needs a non-default token** on the release side, or the Release won't
   trigger the deploy (silent no-op).
+- **Pattern A on Vercel/Netlify double-deploys unless you disable native prod
+  auto-deploy.** The platform ships `main` on every merge *and* CI ships on the
+  Release. Turn off the platform's default-branch deploy (Vercel
+  `git.deploymentEnabled.main: false`; Netlify stop auto-publishing) so only CI ships
+  prod. (Not an issue for Pattern A on GKE/self-hosted — nothing auto-deploys there.)
 - **Don't gate in two places at once.** Pick **one** of A / B / C per app; doubling up
   (e.g. a `production` branch *and* an ignore script) makes "why didn't it deploy?"
   much harder to debug.
