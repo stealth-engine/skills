@@ -16,8 +16,8 @@ does **not** edit). Give it the diff plus the changed files for context.
 > Diff:
 > ```diff
 > {{the scoped diff from SKILL.md §1 — committed: `git diff <base>...HEAD`;
->   uncommitted: `git diff` + `git diff --staged`. Use whichever scope you chose,
->   and feed the SAME scope to Reviewer B.}}
+>   uncommitted: `git diff` + `git diff --staged`; all: `git diff <base>`. Use
+>   whichever scope you chose, and feed the SAME scope (and `-t` value) to Reviewer B.}}
 > ```
 >
 > Read the full changed files (and immediate callers) as needed for context, but

@@ -41,10 +41,12 @@ For a *whole-codebase* sweep you need a different, partitioned skill — this is
 ## 1. Scope the diff
 
 Pin down exactly what's under review and capture it once so **every reviewer sees the
-identical change set**:
+identical change set**. Each scope maps to a CodeRabbit `-t` value (Reviewer B):
 
-- PR / branch work: `git diff <base>...HEAD` (committed) — base is usually `main`.
-- Uncommitted work: `git diff` (and `git diff --staged`).
+- **`committed`** — PR / branch work: `git diff <base>...HEAD` (base is usually `main`).
+- **`uncommitted`** — working tree only: `git diff` + `git diff --staged`.
+- **`all`** — everything not yet released, committed *and* uncommitted, vs base:
+  `git diff <base>` (working tree compared to `<base>`).
 
 Note the base and the list of changed files; you'll hand both to the reviewers.
 
