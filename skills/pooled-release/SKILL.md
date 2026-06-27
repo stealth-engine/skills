@@ -29,6 +29,10 @@ unchanged, so **dev velocity and PR flow don't change**. The only thing you move
 semantic-release already does the batching — it always releases "everything since the
 last tag." Pooling just means you tag **less often**.
 
+> **For a visual, human-readable walkthrough** — trigger diagrams, a merges-to-releases
+> timeline, and the "why each config delta" table — see
+> [`reference/pooled-vs-unpooled.md`](./reference/pooled-vs-unpooled.md).
+
 ## Pick a model
 
 Use [`templates/release-on-demand.yml`](./templates/release-on-demand.yml) for the
@@ -107,6 +111,8 @@ Start from `semantic-release-automation`'s `release.yml` and:
 
 ## See also
 
+- [`reference/pooled-vs-unpooled.md`](./reference/pooled-vs-unpooled.md) — visual
+  walkthrough (diagrams, timeline, config-delta table) for humans skimming the design.
 - [`semantic-release-automation`](../semantic-release-automation/SKILL.md) — the
   pipeline this reuses; pooling only swaps the trigger.
 - [`conventional-commits`](../conventional-commits/SKILL.md) — what the batched
