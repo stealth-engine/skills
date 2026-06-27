@@ -43,10 +43,14 @@ gh api graphql --paginate -f query='
 
 # (c) Top-level (issue) comments — some bots post findings/summaries here; these have
 # NO thread/resolve state, so dedup them by stable id (next section), not by time.
-# Emit the id (or first-line fallback) + a body preview so these findings can actually
-# be triaged, not just counted — convergence requires triaging them too.
+# FILTER OUT non-findings so they don't re-enter triage forever: your OWN rejection/
+# status replies (set ME to the account this loop posts as) and bot summary/linkback
+# comments (no actionable finding). Emit id (or first-line fallback) + body preview.
+export ME=your-bot-or-username   # <-- the login this loop comments as; skip its own posts
 gh api repos/$REPO/issues/$PR/comments --paginate --jq \
-  '.[] | "\(.user.login) | "
+  '.[] | select(.user.login != env.ME)
+       | select(.body | test("linear-linkback|auto-generated comment: summarize"; "i") | not)
+       | "\(.user.login) | "
        + ( (.body|capture("BUGBOT_BUG_ID: (?<id>[a-f0-9-]+)")?|.id)
          // (.body|capture("cr-comment:v1:(?<id>[A-Za-z0-9]+)")?|.id)
          // (.body|ltrimstr("\n")|split("\n")[0])[0:80] )
