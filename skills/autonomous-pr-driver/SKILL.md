@@ -40,7 +40,12 @@ behaviour snapshot).
 4. **Converge?** Done when **all required checks pass** *and* the latest round
    produced **no new valid findings**. Stale re-posts and rejected/“wontfix” items
    don't block. **Do not chase non-deterministic bots to zero comments** — they
-   re-post regardless.
+   re-post regardless. A green PR can still be **un-mergeable** — if it's behind base
+   or `mergeable=CONFLICTING` (`mergeStateStatus` `BEHIND`/`DIRTY`), update/rebase it
+   per [`resolve-merge-conflicts`](../resolve-merge-conflicts/SKILL.md) (non-
+   destructively; escalate if a conflict isn't safe to auto-resolve). That push
+   creates a **new HEAD**, so **go back to step 2** and re-converge on it — checks and
+   bot reviews still reflect the pre-update commit; never hand off on stale-commit green.
 5. **Hand off.** **Ping the human to merge — never self-merge by default.**
    Auto-merge (squash) **only** if the task/goal explicitly authorised it.
 
@@ -115,3 +120,4 @@ sentences), so the human reviewer has the reasoning on record.
 - [`reference/known-bots.md`](./reference/known-bots.md) — dated per-bot behaviour snapshot.
 - [`conventional-commits`](../conventional-commits/SKILL.md) — the title format for the PR.
 - [`git-trunk-branch-and-pr-automation`](../git-trunk-branch-and-pr-automation/SKILL.md) — branch naming + squash + the PR-title checks this works alongside.
+- [`resolve-merge-conflicts`](../resolve-merge-conflicts/SKILL.md) — when a PR is behind base / has conflicts; resolve non-destructively or escalate.
