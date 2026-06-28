@@ -3,7 +3,7 @@ name: semantic-release-automation
 description: "Automate versioning, changelog, tags, GitHub Releases, and npm publishing from Conventional Commits with semantic-release. Use when setting up or debugging automated releases, wiring a `.releaserc` / `release` config and the plugin pipeline (commit-analyzer, release-notes-generator, changelog, npm, git, github), making `main` cut a version on merge, generating CHANGELOG.md, publishing to npm or creating a GitHub Release per release, doing per-package releases in a monorepo (per-package tags + paths-filter matrix), pooling commits into a less-frequent release, or fixing a release that didn't fire / a CI loop from the release commit. Covers the single-package and monorepo flavors and the GitHub Actions workflow."
 metadata:
   author: stealth-engine
-  version: "1.1.0"
+  version: "1.2.0"
 ---
 
 # semantic-release automation
@@ -26,11 +26,41 @@ monorepo per-package config, and the GitHub Actions workflow.
    - **release-notes-generator** → builds the notes from those commits.
    - **changelog** → writes/updates `CHANGELOG.md`.
    - **npm** *(optional)* → bumps `package.json` and publishes to npm.
-   - **git** → commits `CHANGELOG.md`/`package.json` back as `chore(release): X.Y.Z` and tags it.
+   - **git** → commits `CHANGELOG.md`/`package.json` back as `chore(release): X.Y.Z` (the version **tag** itself is created by semantic-release core, not this plugin).
    - **github** → creates the **GitHub Release** (the canonical record of what shipped).
 
 If no commit since the last release warrants a bump (only `chore`/`docs`/…), it
 does nothing — correct, not a failure.
+
+### Outputs are à la carte — pick any subset
+
+Those six steps read like one bundle, but the **outputs are independent**: keep only
+the plugins for what you actually want. `commit-analyzer` + `release-notes-generator`
+are the **baseline** (they compute the version and notes) — keep them; everything below
+is opt-in.
+
+| Output | Plugin(s) | Needs |
+| --- | --- | --- |
+| **git tag** | *(semantic-release **core** — no plugin)* | — (created on every release) |
+| **GitHub Release** | `@semantic-release/github` | workflow grants write `permissions` — the template sets `contents` + `issues` + `pull-requests` (the plugin's default success **and failure** issue/PR comments need the latter two; see the plugin docs before trimming them); default `GITHUB_TOKEN` then suffices — a PAT/bot token only if the Release must trigger a downstream `on: release` workflow |
+| **`CHANGELOG.md` committed to the repo** | `@semantic-release/changelog` + `@semantic-release/git` | release bot can commit to `main` (bypass branch protection) |
+| **`package.json` version bump** (no publish) | `@semantic-release/npm` (`"npmPublish": false`) **+ `@semantic-release/git`** to commit it back | without `@semantic-release/git` the bump is made in CI then **discarded** — `package.json` in the repo stays unchanged |
+| **npm publish** | `@semantic-release/npm` | `NPM_TOKEN`; libraries only |
+
+The **git tag always happens** (core); each other output appears only if its plugin is
+present — drop `@semantic-release/npm` and `package.json` is never bumped; drop
+`@semantic-release/git` and there's no in-repo `CHANGELOG.md`/version commit (tag-only).
+
+- A **deployed app** typically wants **`CHANGELOG.md` + GitHub Release** but **not** npm
+  publish — drop `@semantic-release/npm` (or `"npmPublish": false` to still bump
+  `package.json`). A **library** adds npm publish on top.
+- If your deploy gate fires on the **published GitHub Release** — both the
+  **release-event-driven deploy** and the **Promotion Branch** gate do (`on: release`
+  with `types: [published]`, see [`production-release-gating`](../production-release-gating/SKILL.md)) —
+  then `@semantic-release/github` is **required**: no Release, no deploy. (Only Vercel's
+  build-skip `ignoreCommand` gate needs no Release — but it matches on the
+  `chore(release): X.Y.Z` **commit**, so it requires `@semantic-release/git` instead; a
+  tag-only config leaves it nothing to detect.)
 
 ## Where config lives
 
