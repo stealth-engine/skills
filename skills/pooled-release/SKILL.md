@@ -3,7 +3,7 @@ name: pooled-release
 description: "Cut fewer, batched releases (a 'release train') instead of one per merge — by triggering semantic-release on demand or on a cadence rather than on every push to main. Use when releasing on every merge is too noisy, when you want one larger readable changelog per release, to add a manual 'cut a release' button (workflow_dispatch) or a scheduled/weekly release, to set up prerelease channels (next/beta → promote to stable), or when deciding whether you need a release branch."
 metadata:
   author: stealth-engine
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Pooled releases (release trains)
@@ -28,6 +28,12 @@ unchanged, so **dev velocity and PR flow don't change**. The only thing you move
 
 semantic-release already does the batching — it always releases "everything since the
 last tag." Pooling just means you tag **less often**.
+
+A pooled run produces the **same outputs** as a per-merge one (just batched), and
+those outputs are independent — CHANGELOG, GitHub Release, and npm publish are each
+opt-in. A pooled **app** usually wants CHANGELOG + GitHub Release but not npm; see
+[`semantic-release-automation` → Outputs are à la carte](../semantic-release-automation/SKILL.md#outputs-are-à-la-carte--pick-any-subset).
+The GitHub Release is also what a deploy gate keys on (below).
 
 > **For a visual, human-readable walkthrough** — trigger diagrams, a merges-to-releases
 > timeline, and the "why each config delta" table — see
