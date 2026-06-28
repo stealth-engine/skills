@@ -3,7 +3,7 @@ name: git-trunk-branch-and-pr-automation
 description: "Trunk-based Git workflow with enforced branch naming and squash-merge PR titles. Use when setting up or standardising a branch/PR workflow, naming branches (feature/ fix/ hotfix/ and AI-agent prefixes claude/ cursor/ codex/ copilot/ codegen-bot/ dependabot/), configuring squash-only merges where the PR title becomes the commit and the body is the concatenated commits, making the PR title a valid Conventional Commit, adding GitHub Actions that validate branch names or auto-normalise PR titles, fixing a PR-title bot that loops, or deciding trunk vs release branches. Covers the GitHub repo settings, the validation/normalisation workflows, and how it feeds semantic-release."
 metadata:
   author: stealth-engine
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Trunk-based branches + squash-PR automation
@@ -50,13 +50,36 @@ Configure the repo so a merge collapses to one clean, semantic commit:
 - On open/reopen/synchronize it normalises the title to Conventional Commits
   (lowercasing the type, or synthesising `<type>: <subject>` from the PR's commits
   / branch prefix when the title isn't conventional).
-- **`[skip title auto pr]`** opts out (warned, not recommended).
+- A correct title is left untouched; the **`skip-title-automation` label** opts out of
+  the auto-rewrite for the rare edge case (still validated — see
+  [Opting out](#opting-out-of-the-auto-rewrite) below).
 - It posts a **sticky comment** explaining the squash convention.
 - Install the script at `.github/scripts/normalize-pr-title.js`; the workflow
   `sparse-checkout`s the `.github/scripts` directory to load it.
 
 Pair it with `branch-name-check.yml`, and in **branch protection** require both
 checks (plus your release/CI checks) before a PR can merge.
+
+### Opting out of the auto-rewrite
+
+There are two cases — and the **first covers almost everyone**:
+
+1. **Just write a valid Conventional Commit title.** The normaliser only rewrites a
+   title that *isn't* already conventional; a correct title (`feat: add x`,
+   `fix(api): …`) is left **completely untouched**. There's nothing to "skip" — this
+   is the intended path.
+2. **Add the `skip-title-automation` label** (create it once in the repo) only for the
+   rare case where the title isn't conventional *yet* and you don't want the bot
+   auto-editing it / posting its comment while you sort it out (e.g. mid-review). The
+   label suppresses the **auto-rewrite + sticky comment** — but **not validation**: the
+   required check still **fails** until the title is a valid Conventional Commit (or a
+   `type!:` breaking commit is reflected by a `!`). So the label changes *who* fixes
+   the title (you, not the bot), never *whether* it must be valid before merge.
+
+The opt-out is a **label, not a string in the title**, on purpose: the PR title becomes
+the squash commit semantic-release reads, so any marker left in the title would land in
+the release commit and silently produce **no release**. The label is also ignored on
+the fork/bot validate path (it never edits there, so there's nothing to suppress).
 
 ## Gotchas
 
@@ -83,8 +106,11 @@ checks (plus your release/CI checks) before a PR can merge.
 - **Squash settings are per-repo and easy to miss** — if "Default commit message"
   is left as "Default" (the first commit's message) instead of **"Pull request
   title and commit details"**, your carefully-named PR title is ignored at merge.
-- **Don't let the title automation fight a human** mid-review; the `[skip title auto
-  pr]` escape hatch exists for that.
+- **The opt-out suppresses the rewrite, not the validation.** The
+  `skip-title-automation` label stops the auto-edit + sticky comment but the title is
+  **still checked** (the required check fails until it's a valid Conventional Commit) —
+  full details in [Opting out](#opting-out-of-the-auto-rewrite) above. A green check
+  always means a releasable title; the label can't bypass that.
 
 ## See also
 
@@ -102,6 +128,6 @@ checks (plus your release/CI checks) before a PR can merge.
 - Generalised from `cphk`'s `branch-name-check.yml` (the
   `feature|fix|hotfix|codegen-bot|copilot|codex|cursor|claude|dependabot` prefix
   set) and `pr-title-manager.yml` + `normalize-pr-title.js` (title normalisation,
-  the `[skip title auto pr]` opt-out, bot-cascade guard, sticky comment).
+  the `skip-title-automation` label opt-out, bot-cascade guard, sticky comment).
 - GitHub squash-merge commit-message options:
   <https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/configuring-commit-squashing-for-pull-requests>

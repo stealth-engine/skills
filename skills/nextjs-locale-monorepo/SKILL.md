@@ -3,7 +3,7 @@ name: nextjs-locale-monorepo
 description: Add locale-prefixed i18n routing across a Next.js monorepo (Turborepo / pnpm workspaces) by extracting the engine into a shared workspace package that every app consumes — locale detection + a middleware/proxy factory + a `use client` LocaleProvider/hooks, plus a shared supportedLanguages config. Each app redirects `/` and unprefixed paths to `/<locale>/…` from the toggle's last choice (the NEXT_LOCALE cookie) then the browser's Accept-Language, wiring only a thin middleware + `[locale]` layout. Use when several apps in one repo need consistent `/en-hk/…` `/zh-hk/…` routing, sharing locale logic via a workspace package instead of copy-paste, dual ESM/CJS build of a package that ships a client provider, Turbo build-ordering so the lib builds before the apps, or per-app locale wiring. For a single standalone site, use nextjs-locale-standalone instead.
 metadata:
   author: stealth-engine
-  version: "1.0.2"
+  version: "1.1.0"
 ---
 
 # Next.js locale routing — monorepo (shared package)
@@ -22,8 +22,11 @@ default**. The redirect carries `Vary: Accept-Language, Cookie` (its locale was
 negotiated from them); prefixed paths pass through with `x-locale` + the
 `NEXT_LOCALE` cookie stamped but **no** such `Vary` (their locale is fixed by the
 URL, so it'd only fragment the cache). The LocaleToggle navigates to `/<newLocale>/…`; the
-middleware is the single writer of the cookie, so the choice persists. Full
-explanation + a toggle template: see **nextjs-locale-standalone**.
+middleware is the single writer of the cookie, so the choice persists. The
+`NEXT_LOCALE` cookie defaults to **`httpOnly: true`** — it's read server-side
+(`request.cookies`) only, never from client JS, so keep it out of reach of
+injected scripts. Set `httpOnly: false` only if client JS genuinely must read it.
+Full explanation + a toggle template: see **nextjs-locale-standalone**.
 
 ## Architecture
 
@@ -128,7 +131,7 @@ copy-paste.
 
 ## Verify (per app)
 
-- `curl -sI localhost:3000/` → `307` to `/<default>/`.
+- `curl -sI localhost:3000/` → `307` to `/<default>` (no trailing slash — matches `createLocalizedUrl`).
 - `curl -sI -H 'Accept-Language: zh-HK' localhost:3000/x` → `307` to `/zh-hk/x`.
-- `curl -sI --cookie 'NEXT_LOCALE=zh-hk' localhost:3000/` → `307` to `/zh-hk/` (cookie beats Accept-Language).
+- `curl -sI --cookie 'NEXT_LOCALE=zh-hk' localhost:3000/` → `307` to `/zh-hk` (cookie beats Accept-Language).
 - `pnpm --filter i18n-routing build` succeeds and `dist/client.*` keeps its `"use client"` banner.

@@ -16,8 +16,10 @@ permissions:
   issues: write
 
 # One run per PR; a newer push cancels the older, still-running analysis.
+# Keyed on PR number (not head_ref) so two different forks that happen to share
+# a branch name can't cancel each other's runs.
 concurrency:
-  group: code-complexity-${{ github.head_ref || github.run_id }}
+  group: code-complexity-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -52,6 +54,12 @@ jobs:
             > scc-output.txt
 
       - name: Post sticky PR comment
+        # Fork PRs run with a read-only token (no write access, no secrets), so
+        # the comment API call would 403 and turn the check red for external
+        # contributors. Skip the step for fork PRs; it still runs for same-repo
+        # branches (the common case). See SKILL.md "Fork PRs can't post" for the
+        # two-workflow alternative if you need stats on fork PRs too.
+        if: github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@v9
         with:
           # Prefer a bot/PAT secret if you have one; else the built-in token.

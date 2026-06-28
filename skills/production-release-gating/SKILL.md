@@ -3,7 +3,7 @@ name: production-release-gating
 description: "Stop every push/merge to main from shipping to production — deploy only on a real release. Use when a merge to main unexpectedly deploys to prod, when you want production to deploy only on a semantic-release version (not every commit), when setting up preview-on-feature-branch but gated-prod-on-main, wiring a Vercel Ignored Build Step / `ignoreCommand`, promoting to a staging/`production` branch, or triggering a deploy from a published GitHub Release (GKE, self-hosted, dispatchable targets). Covers three named patterns — Release-Triggered Deploy (`on: release`, `types: [published]`), Promotion Branch (staging/`production`, most portable), and Build-Skip Gate (the Vercel `ignoreCommand` script) — when to use which, works with both per-merge and pooled releases, branch-aware previews, and monorepo dependency-release handling."
 metadata:
   author: stealth-engine
-  version: "1.2.0"
+  version: "1.3.0"
 ---
 
 # Gating production deploys to real releases
@@ -87,7 +87,18 @@ nothing.
 - **Token caveat:** a Release created with the built-in `GITHUB_TOKEN` will **not**
   trigger `on: release`. Have semantic-release run with a **PAT/bot `GH_TOKEN`** so
   its Release fires this workflow. (See `semantic-release-automation` → token notes.)
-- `concurrency` with `cancel-in-progress: false` so a rollout is never half-killed.
+- **Pre-releases don't deploy:** the deploy job is guarded with
+  `if: ${{ !github.event.release.prerelease }}`, so semantic-release `next`/`beta`
+  channel releases (published with `prerelease: true`) are skipped — only a **stable**
+  Release ships to prod.
+- **Tag shape is validated:** the deploy step refuses a `tag_name` that isn't SemVer
+  (`v?MAJOR.MINOR.PATCH`), so a stray/mis-shaped tag can't roll out. Adjust the regex
+  to your scheme.
+- `concurrency` is a **global** group (`prod-release`, not per-tag) with
+  `cancel-in-progress: false`, so deploys never run concurrently and an in-progress
+  rollout is never half-killed. **Caveat:** GitHub keeps only one *pending* run per
+  group, so a newer release can evict an older **queued** one — if every tag must
+  deploy, add an external queue/lock rather than relying on concurrency alone.
 
 ## Promotion Branch — staging `main`, fast-forward `production`
 
@@ -107,6 +118,14 @@ a configurable production branch.
 - **`production` only ever fast-forwards** from `main`, so it stays an ancestor of the
   release commit and the promotion push is always a clean fast-forward. A rejected
   (non-fast-forward) push is a real divergence to inspect — **never `--force` past it.**
+- **Ancestry is enforced, not assumed:** before pushing, the workflow fetches the
+  default branch and runs `git merge-base --is-ancestor "$SHA" origin/<default>`,
+  refusing to promote a tag whose commit isn't on the default branch. This stops an
+  off-main or unrelated tag from shipping arbitrary code to prod. It fetches into the
+  **same ref it validates** (`origin <branch>:refs/remotes/origin/<branch>`). The branch
+  is auto-resolved from `github.event.repository.default_branch`, so a non-`main`
+  default needs no edit — override `DEFAULT_BRANCH` only if you cut releases from a
+  branch *other* than the repo default.
 - **Pairs naturally with [`pooled-release`](../pooled-release/SKILL.md):**
   semantic-release runs on `main` (button/cron) and tags; this promotes the tag to
   prod. Merges to `main` keep shipping staging; prod ships on the train.
@@ -153,6 +172,16 @@ commented in the template) so an app redeploys when its shared lib version bumps
 - **`[skip ci]` in the release commit** (the monorepo semantic-release flavor) means
   push-triggered workflows won't see it — which is exactly why Release-Triggered Deploy
   keys on the *Release event*, not the push.
+- **Pre-releases must not reach prod.** Both the deploy and promote jobs gate on
+  `if: ${{ !github.event.release.prerelease }}`; without it, a `next`/`beta` Release
+  would ship to production. Keep the guard if you adapt these.
+- **Supply chain — pin actions to commit SHAs for a hardened posture.** These
+  workflows run with `contents: write`, and `@v7`/`@v9` are **mutable tags** — even
+  first-party `actions/*` tags can be re-pointed — so for strict supply-chain safety
+  pin **every** `uses:` (including `actions/checkout`/`actions/github-script`, not just
+  third-party like `pnpm/action-setup`) to a full commit SHA with a `# vX.Y.Z` comment,
+  and let Dependabot bump them. The templates ship readable major tags as the
+  convenient default; tighten to SHAs where the risk warrants.
 
 ## See also
 

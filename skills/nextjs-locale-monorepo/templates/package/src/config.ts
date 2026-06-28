@@ -14,7 +14,10 @@ export interface I18nConfig {
 export const defaultCookieOptions = {
   path: '/',
   sameSite: 'lax' as const,
-  httpOnly: false,
+  // Server-only by default: the locale cookie is read via request.cookies, never
+  // document.cookie. httpOnly:true keeps it out of reach of injected scripts.
+  // Override with httpOnly:false only if client JS must read it.
+  httpOnly: true,
 };
 
 export function createI18nConfig(config: I18nConfig): Required<I18nConfig> {

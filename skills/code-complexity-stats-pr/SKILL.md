@@ -3,7 +3,7 @@ name: code-complexity-stats-pr
 description: Add a GitHub Actions workflow that posts code-size and cost statistics — lines of code, per-language breakdown, complexity, and a COCOMO "what would this cost to build" estimate — as a sticky comment on every pull request, using scc. Use when you want a per-PR code-stats or "worth of the codebase" comment, to show LOC / language breakdown or an estimated development cost/effort on PRs, to set up scc (Sloc Cloc and Code) in CI, to post or upsert a single self-updating bot comment from GitHub Actions, or to change the COCOMO salary/currency. Covers fork-PR token limits, runner architecture, version pinning, and comment pagination.
 metadata:
   author: stealth-engine
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Code complexity / cost stats on every PR
@@ -42,8 +42,10 @@ only thing you'll likely change is `--avg-wage` (and the currency note).
   `<!-- code-complexity -->`. The script lists existing comments, finds the one
   with that marker, and **updates it** (else creates one) — so a PR keeps exactly
   one stats comment that refreshes instead of stacking new ones each push.
-- **Concurrency:** `cancel-in-progress: true` keyed on the PR — a new push kills
-  the in-flight run so you don't race two comment updates.
+- **Concurrency:** `cancel-in-progress: true` keyed on the **PR number**
+  (`github.event.pull_request.number`) — a new push kills the in-flight run so you
+  don't race two comment updates. Keyed on the number, not `head_ref`, so two
+  forks sharing a branch name can't cancel each other.
 - **COCOMO cost:** `scc --avg-wage <annual>` drives the cost figure. The number is
   unitless to scc — it's read in *your* currency. The template uses `360000`
   (HKD 30,000/month) and labels the comment HKD; change both together.
@@ -61,11 +63,15 @@ only thing you'll likely change is `--avg-wage` (and the currency note).
 ## Gotchas
 
 - **Fork PRs can't post the comment.** For PRs from forks, `pull_request` runs
-  with a **read-only** token and no repo secrets, so the comment step fails (403).
-  Declaring `pull-requests: write` does **not** override this — GitHub enforces
-  read-only on the token itself for fork-triggered runs. Options: (a) accept that
-  stats only post for same-repo branches (fine for solo/team repos — the common
-  case); or (b) split into two workflows — compute on `pull_request` (no secrets,
+  with a **read-only** token and no repo secrets, so the comment API call would
+  403. Declaring `pull-requests: write` does **not** override this — GitHub
+  enforces read-only on the token itself for fork-triggered runs. The template
+  guards the comment step with
+  `if: github.event.pull_request.head.repo.full_name == github.repository`, so on
+  fork PRs it **skips cleanly** (green check) instead of failing red. Options:
+  (a) accept that stats only post for same-repo branches (fine for solo/team
+  repos — the common case; this is the template default); or (b) split into two
+  workflows — compute on `pull_request` (no secrets,
   untrusted code), upload `scc-output.txt` as an artifact, then comment from a
   separate `workflow_run` job that has write access. **Do not** just switch this
   workflow to `pull_request_target`: that runs with a write token in the *base*

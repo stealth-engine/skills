@@ -70,6 +70,49 @@ function toSubject(s) {
 }
 
 /**
+ * Read-only validation of a PR title + its commits against the squash-merge
+ * contract. Pure: returns the problems instead of failing. The same-repo (normalize)
+ * workflow path imports and calls this; the fork/bot (validate) path can't check out
+ * the PR-modifiable script, so it re-implements the SAME checks INLINE — keep the two
+ * in sync. Returns `{ ok, errors }` — `errors` is empty when the title is release-ready.
+ *
+ * Mirrors the inline fork checks: (1) the title must be a lowercase Conventional
+ * Commit (mis-cased `Feat:` doesn't match semantic-release's rules → no release),
+ * and (2) a bang-style breaking commit (`feat!:`) must be reflected by a `!` in
+ * the title, else the break is lost on squash and under-releases. A
+ * `BREAKING CHANGE:` footer survives in the squash body, so it needs no title `!`.
+ */
+function validatePRTitle(currentTitle, commits = []) {
+  const title = (currentTitle || '').trim();
+  const errors = [];
+
+  // STRICT (case-sensitive, lowercase types) on purpose — see (1) above.
+  const conventional = new RegExp(`^(${TYPES.join('|')})(\\([^)]+\\))?!?: .+`);
+  if (!conventional.test(title)) {
+    errors.push(
+      `PR title must be a lowercase Conventional Commit (e.g. "feat: …") — ` +
+      `it becomes the squash commit that drives the release: "${title}"`
+    );
+    return { ok: false, errors };
+  }
+
+  const msgs = (Array.isArray(commits) ? commits : []).map(
+    (c) => c.commit?.message || c.message || ''
+  );
+  const footerBreaking = msgs.some((m) => /^BREAKING[ -]CHANGE:/m.test(m));
+  const bangBreaking = msgs.some((m) => /^\w+(\([^)]+\))?!:/.test(m));
+  const titleBreaking = /^[a-z]+(\([^)]+\))?!:/.test(title);
+  if (bangBreaking && !footerBreaking && !titleBreaking) {
+    errors.push(
+      `A commit is breaking (\`type!:\`) but the title has no "!" and there's ` +
+      `no BREAKING CHANGE footer to survive the squash. Add "!" (e.g. ` +
+      `"feat!: …") so the merge cuts a MAJOR release: "${title}"`
+    );
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+/**
  * @returns {{ newTitle: string, changed: boolean, reason: string }}
  */
 function processPRTitle(currentTitle, commits = [], branchName = '') {
@@ -116,4 +159,4 @@ function processPRTitle(currentTitle, commits = [], branchName = '') {
   };
 }
 
-module.exports = { processPRTitle, TYPES, CONVENTIONAL };
+module.exports = { processPRTitle, validatePRTitle, TYPES, CONVENTIONAL };

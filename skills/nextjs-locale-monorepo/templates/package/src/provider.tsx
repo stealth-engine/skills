@@ -46,12 +46,15 @@ export function useIsLocale(targetLocale: string): boolean {
 
 export function useLocaleInfo() {
   const locale = useCurrentLocale();
+  // The URL segment may be any case (`/EN-HK/…` is accepted), so normalize
+  // before matching language/region — otherwise `en-HK`/`zh-TW` slip through.
+  const lower = locale.toLowerCase();
   return {
     locale,
-    isEnglish: locale.startsWith('en'),
-    isChinese: locale.startsWith('zh'),
-    isHongKong: locale.endsWith('-hk'),
-    isTaiwan: locale.endsWith('-tw'),
-    isMainland: locale.endsWith('-cn'),
+    isEnglish: lower.startsWith('en'),
+    isChinese: lower.startsWith('zh'),
+    isHongKong: lower.endsWith('-hk'),
+    isTaiwan: lower.endsWith('-tw'),
+    isMainland: lower.endsWith('-cn'),
   };
 }
