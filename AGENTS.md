@@ -88,6 +88,29 @@ npx skills init skills/<skill-name>   # scaffolds the folder + SKILL.md
 Then fill in the frontmatter + body, add a row to the **Skills** table in
 `README.md`, and commit.
 
+## Dogfooding — these skills are available while working in this repo
+
+Every skill under `skills/<name>/` is symlinked into the agent-discovery dirs so
+**Claude Code and Codex (and other agents) pick them up automatically** when working
+in this repo:
+
+```
+.claude/skills/<name>  ->  ../../skills/<name>   # Claude Code
+.agents/skills/<name>  ->  ../../skills/<name>   # Codex / universal
+```
+
+The links are **relative**, so they resolve in any clone or worktree, and they point
+at the **working-tree** skill (edits are live — no reinstall). When you add a skill,
+re-link it:
+
+```bash
+for d in skills/*/; do n=$(basename "$d"); \
+  ln -sfn "../../skills/$n" ".claude/skills/$n"; \
+  ln -sfn "../../skills/$n" ".agents/skills/$n"; done
+```
+
+(Consumers of this repo install instead with `npx skills add stealth-engine/skills`.)
+
 ## Branching & pull requests
 
 This repo uses a **feature-branch + PR** workflow. Do **not** commit directly to
