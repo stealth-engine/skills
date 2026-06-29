@@ -56,7 +56,10 @@ export function shouldSkipMiddleware(pathname: string): boolean {
     );
 
   return (
-    pathname.startsWith('/_next') ||
+    // Segment-aware (like /api below, and the middleware matcher) so a real route
+    // such as /_nextjs isn't skipped — only Next's own /_next/* internals.
+    pathname.startsWith('/_next/') ||
+    pathname === '/_next' ||
     pathname.startsWith('/api/') ||
     pathname === '/api' ||
     pathname.startsWith('/.well-known') ||
@@ -74,9 +77,21 @@ export function parseAcceptLanguage(acceptLanguage: string): string[] {
   return acceptLanguage
     .split(',')
     .map((lang) => {
-      const [locale, q = '1'] = lang.trim().split(';q=');
-      return { locale: locale.toLowerCase(), quality: parseFloat(q) };
+      // Split off the locale, then find the q-param tolerating optional spaces
+      // (`en-US; q=0.8`). Missing q → 1. Only a well-formed 0–1 weight counts;
+      // malformed/out-of-range (`q=2`, `q=0.8junk`) → NaN so it's dropped below
+      // rather than silently outranking valid locales.
+      const [rawLocale, ...params] = lang.trim().split(';');
+      const qParam = params
+        .map((p) => p.trim())
+        .find((p) => p.toLowerCase().startsWith('q='));
+      const qRaw = qParam === undefined ? '1' : qParam.slice(2).trim();
+      const quality = /^\d+(\.\d+)?$/.test(qRaw) ? Number.parseFloat(qRaw) : Number.NaN;
+      return { locale: rawLocale.trim().toLowerCase(), quality };
     })
+    // `q=0` rejects that locale; valid weights are 0–1. Keep only well-formed,
+    // in-range, positive qualities (drops `q=0`, NaN, and out-of-range like `q=2`).
+    .filter((item) => item.locale && item.quality > 0 && item.quality <= 1)
     .sort((a, b) => b.quality - a.quality)
     .map((item) => item.locale);
 }

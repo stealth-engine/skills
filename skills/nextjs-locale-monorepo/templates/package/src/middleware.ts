@@ -66,16 +66,21 @@ export function createI18nMiddleware(userConfig: I18nConfig) {
     if (!hasLocale) {
       const locale = getLocaleFromRequest(request, config);
 
+      // Match createLocalizedUrl(): root `/` → `/<locale>` (no trailing slash),
+      // so the redirect lands on the canonical path and avoids an extra
+      // trailing-slash canonicalization hop.
+      const localizedPath = `/${locale}${pathname === '/' ? '' : pathname}`;
+
       // Preserve the query string. clone() exists in the real runtime; the else
       // branch keeps unit tests (no clone) working. (URL hashes never reach the
       // server, so there is nothing to carry over there.)
       let url: URL;
       if (request.nextUrl.clone) {
         url = request.nextUrl.clone();
-        url.pathname = `/${locale}${pathname}`;
+        url.pathname = localizedPath;
       } else {
         const urlObj = new URL(request.url);
-        url = new URL(`/${locale}${pathname}`, urlObj.origin);
+        url = new URL(localizedPath, urlObj.origin);
         url.search = urlObj.search;
       }
 

@@ -14,7 +14,11 @@ import { createI18nMiddleware, i18nConfig } from 'i18n-routing';
 const i18n = createI18nMiddleware(
   i18nConfig(supportedLanguages, {
     cookieName: 'NEXT_LOCALE',
-    cookieOptions: { path: '/', sameSite: 'lax', httpOnly: false },
+    // Server-only: nothing reads NEXT_LOCALE from client JS (the toggle relies
+    // on the middleware rewriting the cookie, the server reads it via
+    // request.cookies). Keep httpOnly:true so injected scripts can't read it.
+    // Only set httpOnly:false if you genuinely need client JS to read it.
+    cookieOptions: { path: '/', sameSite: 'lax', httpOnly: true },
   })
 );
 
@@ -31,5 +35,8 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next|api|.*\\..*).*)'],
+  // Anchor the excluded segments to a `/` or end-of-path boundary so real routes
+  // that merely start with the same letters (`/api-docs`, `/_nextjs`) are NOT
+  // skipped — a bare `api` / `_next` would over-match them.
+  matcher: ['/((?!_next(?:/|$)|api(?:/|$)|.*\\..*).*)'],
 };

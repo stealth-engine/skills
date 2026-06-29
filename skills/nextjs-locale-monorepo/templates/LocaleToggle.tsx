@@ -38,7 +38,15 @@ export function LocaleToggle() {
           type="button"
           onClick={() => switchTo(l.id)}
           aria-current={l.id === current ? 'true' : undefined}
-          className={l.id === current ? 'font-semibold underline' : ''}
+          // min-w/min-h 44px → meets the 44×44 minimum touch target;
+          // focus-visible ring → keyboard focus is always visible.
+          className={[
+            'inline-flex min-h-[44px] min-w-[44px] items-center justify-center px-3',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
+            l.id === current ? 'font-semibold underline' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
         >
           {l.title}
         </button>
