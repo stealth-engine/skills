@@ -23,7 +23,7 @@ git ls-files | awk '{d=$0; sub("/[^/]*$","",d); print (d==$0?".":d)}' | sort | u
 # whole `Total` row — Files/Lines/Blanks/Comments/Code/Complexity — rather than picking a
 # column, so it stays correct across scc versions. The by-file view is a supplement.)
 if command -v scc >/dev/null; then
-  for d in $(git ls-files | awk -F/ 'NF>1{print $1}' | sort -u); do
+  git ls-files | awk -F/ 'NF>1{print $1}' | sort -u | while IFS= read -r d; do
     printf '%-24s ' "$d"; scc --no-cocomo "$d" | awk '/^Total/{sub(/^Total */,"");print}'
   done
   scc --by-file --format wide --sort code . | head -30 || true   # top files, supplemental

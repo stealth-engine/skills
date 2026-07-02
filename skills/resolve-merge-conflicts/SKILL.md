@@ -81,9 +81,9 @@ resolve once. **Never rebase a branch other people are actively committing to.**
   let one side's deletion silently win. (`git status` labels these.)
 - **Lockfiles** (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `Cargo.lock`) →
   **do not hand-merge.** Take one side, then **regenerate** from the merged manifest
-  (`npm install --package-lock-only` / `pnpm install --lockfile-only` / etc.) so the
-  lock matches the resolved `package.json`. This is the *legitimate* use of "take one
-  side."
+  (`npm install --package-lock-only` / `pnpm install --lockfile-only` /
+  `cargo generate-lockfile` / etc.) so the lock matches its resolved manifest
+  (`package.json`, `Cargo.toml`, …). This is the *legitimate* use of "take one side."
 - **Generated/build output** → regenerate from source, never merge by hand.
 - **Binary** → you can't merge text; pick a side deliberately or escalate.
 - **Semantic** → the file merges with **zero markers** but is logically broken (one

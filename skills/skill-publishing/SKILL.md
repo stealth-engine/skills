@@ -130,7 +130,7 @@ a root skill and a `skills/` dir). Telemetry is on by default; set
 `DISABLE_TELEMETRY=1` (or `DO_NOT_TRACK=1`) to opt out.
 
 > Provenance: CLI commands, flags, and behaviour verified against `skills`
-> v1.5.13 (2026-07). The CLI iterates fast — re-check flags if it's since moved.
+> v1.5.x (2026-07). The CLI iterates fast — re-check flags if it's since moved.
 
 ## Publishing to GitHub
 

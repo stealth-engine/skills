@@ -135,8 +135,11 @@ The workflow detects **which packages changed** with `dorny/paths-filter` and ru
           # org/repo rename desyncing package.json's repository field (EMISMATCHGITHUBURL).
           run: |
             R="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
-            git pull --rebase origin main || true
-            npx semantic-release --repository-url "$R" || { git pull --rebase origin main; npx semantic-release --repository-url "$R"; }
+            # checkout defaults to detached HEAD on push — land on the branch so the
+            # rebase-retry has a branch to rebase onto (and to push the tag from).
+            git checkout "$GITHUB_REF_NAME"
+            git pull --rebase origin "$GITHUB_REF_NAME" || true
+            npx semantic-release --repository-url "$R" || { git pull --rebase origin "$GITHUB_REF_NAME"; npx semantic-release --repository-url "$R"; }
   ```
 
   `dorny/paths-filter` emits `changes` as a JSON array of the matched filter keys;

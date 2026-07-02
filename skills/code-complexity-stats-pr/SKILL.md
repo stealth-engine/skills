@@ -29,7 +29,7 @@ It reports the **whole codebase at the PR's head**, not the diff — it's a
 
 Copy [`templates/code-complexity.yml`](./templates/code-complexity.yml) to
 `.github/workflows/code-complexity.yml`. It works as-is on `ubuntu-latest`; the
-only thing you'll likely change is `--avg-wage` (and the currency note).
+only thing you'll likely change is the `AVG_WAGE` / `WAGE_LABEL` workflow env (see Customise).
 
 ## How it works (the parts that matter)
 
