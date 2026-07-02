@@ -32,6 +32,7 @@ jobs:
     # Pre-releases (semantic-release `next`/`beta` channels publish a Release with
     # prerelease: true) must NOT advance `production` — only stable releases promote.
     if: ${{ !github.event.release.prerelease }}
+    timeout-minutes: 10 # don't hold the promote-production concurrency slot if git hangs
     steps:
       - uses: actions/checkout@v7
         with:

@@ -3,7 +3,8 @@ name: nextjs-locale-standalone
 description: Add locale-prefixed i18n routing to a single (non-monorepo) Next.js App Router site — a middleware/proxy that redirects `/` and any unprefixed path to `/<locale>/…` using the locale toggle's last choice (the NEXT_LOCALE cookie) then the browser's Accept-Language, a `[locale]` layout with a LocaleProvider + hooks, and a LocaleToggle that persists the choice. Use when adding bilingual/multilingual routing to a standalone Next.js site, building `/en-hk/…` `/zh-hk/…` URL namespaces, redirecting the root to a default-or-remembered locale, persisting a language switch across visits, or detecting browser language in middleware. For a monorepo that shares this logic across several apps via a workspace package, use nextjs-locale-monorepo instead.
 metadata:
   author: stealth-engine
-  version: "1.0.3"
+  co-author: wiiiimm
+  version: "1.1.0"
 ---
 
 # Next.js locale routing — standalone site
@@ -107,8 +108,11 @@ the guard are belt-and-suspenders.
 
 ## Gotchas
 
-- **Cookie is `httpOnly: false`** so client code/analytics can read the active
-  locale; it's not a secret. `sameSite: 'lax'`, `secure` on HTTPS, 1-year `maxAge`.
+- **Cookie defaults to `httpOnly: true`** — nothing reads `NEXT_LOCALE` from
+  client JS (the toggle relies on the proxy rewriting it; the server reads it via
+  `request.cookies`), so keep it out of reach of injected scripts. Set
+  `httpOnly: false` only if client code/analytics genuinely must read the active
+  locale. `sameSite: 'lax'`, `secure` on HTTPS, 1-year `maxAge`.
 - **Set `Vary: Accept-Language, Cookie`** on the *negotiated redirect* (the proxy
   does) so a CDN never serves one visitor's locale to another. Prefixed pass-through
   responses skip it — their locale is fixed by the URL, so the extra `Vary` would
@@ -132,7 +136,7 @@ the guard are belt-and-suspenders.
 
 ## Verify
 
-- `curl -sI localhost:3000/` → `307` to `/<default>/` (no cookie, no Accept-Language).
+- `curl -sI localhost:3000/` → `307` to `/<default>` (no trailing slash; no cookie, no Accept-Language).
 - `curl -sI -H 'Accept-Language: zh-HK' localhost:3000/about` → `307` to `/zh-hk/about`.
-- `curl -sI --cookie 'NEXT_LOCALE=zh-hk' localhost:3000/` → `307` to `/zh-hk/` even with an English `Accept-Language` (cookie wins).
+- `curl -sI --cookie 'NEXT_LOCALE=zh-hk' localhost:3000/` → `307` to `/zh-hk` even with an English `Accept-Language` (cookie wins).
 - Visiting `/zh-hk/x` sets `NEXT_LOCALE=zh-hk` in the response `Set-Cookie`.

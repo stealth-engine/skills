@@ -57,9 +57,9 @@ highlighted nodes differ.
 
 ```mermaid
 flowchart TD
-    A[workflow_dispatch or schedule fires] --> G{{"if: github.ref_name == default_branch"}}
-    G -- "ref ≠ main<br/>(dispatched from a feature branch)" --> SKIP["job skips — no-op"]
-    G -- "ref == main" --> C["checkout · fetch-depth: 0<br/>full history + tags"]
+    A[workflow_dispatch or schedule fires] --> G{{"if: event == schedule<br/>OR ref_name == default_branch"}}
+    G -- "dispatched from a feature branch" --> SKIP["job skips — no-op"]
+    G -- "schedule, or ref == main" --> C["checkout · fetch-depth: 0<br/>full history + tags"]
     C --> N[setup-node · npm ci]
     N --> S["npx semantic-release<br/>→ analyze commits since last tag<br/>→ bump version, update CHANGELOG<br/>→ tag + GitHub Release + npm"]
     S --> P["pushes chore(release): x.y.z commit"]
@@ -78,7 +78,7 @@ to get wrong if you only swap the `on:` line.
 |---|---|---|---|
 | **Trigger** | `on: push: [main]` | `on: workflow_dispatch` (+ optional `schedule`) | The whole point — decouple merge from release |
 | **Loop guard** | `if: !startsWith(… 'chore(release):')` **required** | **dropped** | semantic-release pushes a `chore(release):` commit. Under `on: push` that re-triggers the workflow → infinite loop. With no `push` trigger, nothing re-fires, so the guard is dead weight |
-| **Branch guard** | not needed (push only ever comes from `main`) | `if: github.ref_name == default_branch` **added** | `workflow_dispatch` lets a human pick *any* branch in the Actions dropdown (or `gh workflow run --ref`). Without the guard, a manual run could analyze/publish from a feature or prerelease branch instead of `main` |
+| **Branch guard** | not needed (push only ever comes from `main`) | `if: github.event_name == 'schedule' \|\| github.ref_name == default_branch` **added** | `workflow_dispatch` lets a human pick *any* branch in the Actions dropdown (or `gh workflow run --ref`). Without the guard, a manual run could analyze/publish from a feature or prerelease branch instead of `main`. The `schedule` clause is required: on cron runs `github.event.repository` is empty, so the bare ref check would be `main == ''` → false and skip every scheduled run |
 | **Concurrency** | `group: release-${{ github.ref }}` (per-branch) | `group: release` (one global lane) | Pooled runs are pinned to `main` anyway, so the button and cron share one serialization lane and can't collide on the tag push |
 
 ## 5. Which one should you use?

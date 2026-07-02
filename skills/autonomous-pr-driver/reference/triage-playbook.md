@@ -15,6 +15,10 @@ export HEAD=$(gh pr view $PR --repo $REPO --json headRefOid --jq .headRefOid)
 # comments anchored to HEAD: some bots leave only inline comments, no review record, so
 # reviews alone would never register them. --paginate walks all pages (reviews come
 # oldest-first, so HEAD's are on the LAST page). (jq/gojq read env.HEAD — export it.)
+# CAVEAT: GitHub bumps a non-outdated inline comment's commit_id forward to the new head
+# on each push, so this can count a reviewer who last commented on an EARLIER push as
+# "on HEAD" — don't treat it as sufficient alone. Pair with the bot's check completing
+# on HEAD (convergence gate 1) before accepting a reviewer as having weighed in.
 { gh api repos/$REPO/pulls/$PR/reviews  --paginate --jq '.[]|select(.commit_id==env.HEAD)|.user.login'
   gh api repos/$REPO/pulls/$PR/comments --paginate --jq '.[]|select(.commit_id==env.HEAD)|.user.login'
 ; } | sort -u   # the set of reviewers that have weighed in on the current HEAD
@@ -36,7 +40,7 @@ gh api graphql --paginate -f query='
           comments(first:1){ nodes{ author{login} body url } } } } } } }' \
   -f owner=${REPO%/*} -f repo=${REPO#*/} -F pr=$PR \
   --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)
-        | "\(.comments.nodes[0].author.login) | \(.path):\(.line // .originalLine) | outdated=\(.isOutdated) | "
+        | "\(.comments.nodes[0].author.login) | \(.path):\(.line // .originalLine // "file") | outdated=\(.isOutdated) | "
           + ( (.comments.nodes[0].body|capture("BUGBOT_BUG_ID: (?<id>[a-f0-9-]+)")?|.id)    # Cursor
             // (.comments.nodes[0].body|capture("cr-comment:v1:(?<id>[A-Za-z0-9]+)")?|.id)  # CodeRabbit
             // (.path + "#" + (.comments.nodes[0].body|ltrimstr("\n")|split("\n")[0])[0:80]) )'  # stable fallback (no marker): file + first line, so unmarked comments don't look new each pass
@@ -47,9 +51,13 @@ gh api graphql --paginate -f query='
 # status replies (set ME to the account this loop posts as) and bot summary/linkback
 # comments (no actionable finding). Emit id (or first-line fallback) + body preview.
 export ME=your-bot-or-username   # <-- the login this loop comments as; skip its own posts
+# NOISE is a repo-specific regex of non-finding boilerplate to drop (bot summaries,
+# linkbacks). The values below are EXAMPLES from one repo's tooling — replace them with
+# your repo's own noise markers (or set to a pattern that never matches to disable). # <-- tune this
+export NOISE='linear-linkback|auto-generated comment: summarize'
 gh api repos/$REPO/issues/$PR/comments --paginate --jq \
   '.[] | select(.user.login != env.ME)
-       | select(.body | test("linear-linkback|auto-generated comment: summarize"; "i") | not)
+       | select(.body | test(env.NOISE; "i") | not)
        | "\(.user.login) | "
        + ( (.body|capture("BUGBOT_BUG_ID: (?<id>[a-f0-9-]+)")?|.id)
          // (.body|capture("cr-comment:v1:(?<id>[A-Za-z0-9]+)")?|.id)
@@ -115,7 +123,10 @@ approver that only passes on human review) so they don't spin the loop forever.
 ## Dedup by finding ID, never by line number
 
 Bots re-anchor the **same** finding to new line numbers on every push, so matching
-on `path:line` makes everything look "new." Match on the stable id instead:
+on `path:line` makes everything look "new." Match on the stable id instead. The
+per-bot marker formats below (and the same regexes embedded in queries b/c above) are
+canonically tracked in [`known-bots.md`](./known-bots.md) — update all in sync if a
+marker format changes:
 
 - **Cursor Bugbot:** `BUGBOT_BUG_ID: <uuid>` in the comment body.
 - **CodeRabbit:** `cr-comment:v1:<hash>` — the per-comment id (use this). A

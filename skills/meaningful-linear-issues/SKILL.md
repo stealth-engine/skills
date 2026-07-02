@@ -3,7 +3,8 @@ name: meaningful-linear-issues
 description: "Create complete, analytics-ready Linear issues in ONE pass — resolve the right project (never guess it), and proactively fill the metadata that's technically optional but matters for planning/analytics: priority, estimate, labels (a Type + an Area from the team's existing taxonomy), milestone, assignee, cycle, and relations. Use when asked to 'create/file/open a Linear issue', 'log a ticket', 'add this to Linear', 'make an issue for X', or before any Linear `save_issue` that **creates** an issue or **backfills** missing metadata on a bare one — so the user doesn't have to come back and ask for the labels/estimate/project a second time, and so an issue doesn't land in the wrong project. NOT for routine field edits (status changes, reassignments) — those are also `save_issue` but don't need this."
 metadata:
   author: stealth-engine
-  version: "1.0.0"
+  co-author: wiiiimm
+  version: "1.1.0"
 ---
 
 # Meaningful Linear issues
@@ -64,12 +65,13 @@ Same checklist, two `save_issue` modes — **don't conflate them**:
 | **title** | Imperative, specific, scannable. Lead with the verb + the object. |
 | **description** | The implementation detail (see [template](#description-template)). |
 | **priority** | `1` Urgent · `2` High · `3` Medium · `4` Low · `0` None. Infer from impact/urgency; default `3` for normal work, ask if it's clearly load-bearing. |
-| **estimate** | Set a real value; Linear **snaps it to the team's scale**, so you don't need the scale up front — but **read back and surface the stored value** (it may change: `3` on an *exponential* team `0,1,2,4,8,16` returns `4`; Fibonacci `0,1,2,3,5,8` keeps `3`). `get_team` doesn't expose the scale — infer it from existing issues' estimates (`list_issues`) only if you need exact pointing. Some teams **disable** estimates — if `save_issue` rejects it, drop the field. |
-| **labels** | Pick from the **existing taxonomy** (`list_issue_labels` for the team) — **don't invent labels**. Typically one **`Type`** (Feature / Bug / Improvement / Chore / Docs / Refactor / Security / Performance / Test / …) **and** one **`Area`** (the relevant module/domain). Match the repo's grouped labels rather than guessing names. |
+| **estimate** | Set a real value; Linear **snaps it to the team's scale**, so you don't need the scale up front — but **read back and surface the stored value** (it may change: `3` on an *exponential* team `0,1,2,4,8,16` returns `4`; Fibonacci `0,1,2,3,5,8` keeps `3`). `get_team` doesn't expose the scale (as of this MCP version) — infer it from existing issues' estimates (`list_issues`) only if you need exact pointing. Some teams **disable** estimates — if `save_issue` rejects it, drop the field. |
+| **labels** | Pick from the **existing taxonomy** (`list_issue_labels` for the team) — **don't invent labels**. Typically one **`Type`** (Feature / Bug / Improvement / Chore / Docs / Refactor / Security / Performance / Test / …) **and** one **`Area`** (the relevant module/domain). Match the team's grouped labels rather than guessing names. |
 | **assignee** | `"me"`, the named owner, or the project/issue's usual owner (`list_users` to resolve a name/email). Don't leave unassigned if an owner is obvious. |
 | **milestone** | `list_milestones` for the project; attach if one fits the work. (None exist? skip — don't fabricate.) |
 | **cycle** | **Set the current cycle** (`list_cycles` → `current`) for active work unless the user opts out — **don't rely on auto-add**, which some teams disable, leaving the issue out of every cycle (and out of velocity). Skip only for backlog/future work that isn't for the current cycle. |
 | **relations** | `parentId` for sub-work; `blocks` / `blockedBy` for ordering; `relatedTo` for siblings. Link issues you reference in the description — it's cheap and powers dependency views. |
+| **dueDate** | ISO date (`YYYY-MM-DD`). Set only when there's a real deadline — a launch, a dependency, a commitment. Don't fabricate one; most issues have none. |
 
 If a field genuinely doesn't apply (e.g. no milestones exist), skip it **knowingly** —
 the goal is "nothing useful left blank," not "every field stuffed."
@@ -142,5 +144,6 @@ Linear links them (and add them to `relatedTo`).
 
 - Linear MCP tool surface (`save_issue`, `list_projects`, `list_issue_labels`,
   `list_milestones`, `list_cycles`, `list_users`, `get_team`) and observed behaviour:
-  estimates snap to the team's scale, new issues auto-join the active cycle, labels are
-  a grouped Type/Area taxonomy that must pre-exist.
+  estimates snap to the team's scale, new issues auto-join the active cycle *when the
+  team enables auto-add* (don't rely on it), labels are a grouped Type/Area taxonomy
+  that must pre-exist.

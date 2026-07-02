@@ -10,12 +10,23 @@ ledger.
 
 ## 1. Map the repo (commands)
 
+**Run this block as a single command** (paste/execute it whole, not line-by-line): the
+last line is the fail-closed check, and it only works as the block's exit status if the
+whole block runs together.
+
 ```bash
 # files-per-dir for ALL TRACKED files (root → .); no head cap — the ledger needs every dir.
 # (Tracked only; if the repo has untracked-but-unignored source, add it to the census.)
 git ls-files | awk '{d=$0; sub("/[^/]*$","",d); print (d==$0?".":d)}' | sort | uniq -c | sort -rn
-# LOC/complexity to size slices — warn now if scc is missing (block fails closed below):
-if command -v scc >/dev/null; then scc --by-file --format wide --sort code . | head -30
+# LOC PER TOP-LEVEL DIR to size slices — this is what partitioning needs.
+# (scc has no per-dir rollup flag, so loop over the dirs and total each. Print each dir's
+# whole `Total` row — Files/Lines/Blanks/Comments/Code/Complexity — rather than picking a
+# column, so it stays correct across scc versions. The by-file view is a supplement.)
+if command -v scc >/dev/null; then
+  git ls-files | awk -F/ 'NF>1{print $1}' | sort -u | while IFS= read -r d; do
+    printf '%-24s ' "$d"; scc --no-cocomo "$d" | awk '/^Total/{sub(/^Total */,"");print}'
+  done
+  scc --by-file --format wide --sort code . | head -30 || true   # top files, supplemental
 else echo "scc not installed — install it for slice sizing" >&2; fi
 # module roots at ANY depth (prune vendor dirs):
 find . \( -name node_modules -o -name vendor -o -name .git \) -prune -o \
@@ -33,8 +44,10 @@ Use the output to choose slice boundaries and to seed the coverage ledger.
 - **Cut on natural seams:** package/module roots, top-level dirs, ownership
   (CODEOWNERS), or layer (api / domain / ui).
 - **Budget per slice:** keep a slice small enough that an agent can read its files
-  *in full* (not skim). If a dir is too big, split by subdir or file-group; if many
-  dirs are tiny, group siblings into one slice.
+  *in full* (not skim) — a rough anchor is **~2–5k LOC, and well under the subagent's
+  context window** (leave room for the dependency contracts you hand it). When in doubt,
+  split. If a dir is too big, split by subdir or file-group; if many dirs are tiny,
+  group siblings into one slice.
 - **Shared/core is its own slice** and is named as a dependency for the slices that
   use it.
 - **Every path lands somewhere:** each file is in exactly one slice **or** on the

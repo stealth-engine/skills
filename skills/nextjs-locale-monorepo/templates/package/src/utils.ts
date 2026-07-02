@@ -62,8 +62,12 @@ export function shouldSkipMiddleware(pathname: string): boolean {
     pathname === '/_next' ||
     pathname.startsWith('/api/') ||
     pathname === '/api' ||
-    pathname.startsWith('/.well-known') ||
-    pathname.startsWith('/favicon') ||
+    // Segment-anchored like the above so real routes (`/.well-known-ish`,
+    // `/favicon-contest`) aren't skipped — only the actual well-known dir and
+    // favicon asset.
+    pathname.startsWith('/.well-known/') ||
+    pathname === '/.well-known' ||
+    pathname.startsWith('/favicon.') ||
     hasFileExtension
   );
 }

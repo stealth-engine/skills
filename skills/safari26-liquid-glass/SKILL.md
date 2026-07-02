@@ -2,8 +2,9 @@
 name: safari26-liquid-glass
 description: How iOS 26 / iPadOS 26 Safari's "Liquid Glass" translucent status & address bars interact with web content, the viewport/keyboard facts behind them, and what to watch for when a design gets creative (immersive/edge-to-edge layouts, custom drawers/modals, gesture panning, themeable backgrounds, canvas). Use when an iPhone/iPad web page shows black/grey bars, content "cut off" at the bar edge, cropped shadows, a drawer/modal that breaks the layout, an inner scroll that won't scroll, the page jumping after the soft keyboard closes, or a canvas blur that won't render on iOS — or before building any full-screen/immersive iOS web UI.
 metadata:
-  author: madeinlantau
-  version: "2.0.1"
+  author: stealth-engine
+  co-author: wiiiimm
+  version: "2.1.0"
 ---
 
 # Safari 26 "Liquid Glass" — facts, gotchas, and what to do
@@ -25,11 +26,16 @@ gets the iPhone model with the glass bars; a wide one gets the desktop-ish model
 Think of the screen as **two viewports**:
 
 - **Layout / large viewport** — the full physical screen, *including* behind both
-  bars. `100vh`, `100lvh`, and `window.innerHeight` measure this. **`innerHeight`
-  is constant** — it does NOT change when the bars show/hide or the keyboard opens.
+  bars. `100vh`, `100lvh`, and `window.innerHeight` all measure **this large
+  viewport**. **`innerHeight` is constant** — it does NOT change when the bars
+  show/hide or the keyboard opens.
 - **Visual / small viewport** — only the area *between* the bars.
   `window.visualViewport.height` and `100svh` measure this; **`100dvh`** tracks
   it dynamically (it shrinks when the keyboard opens).
+
+So on this model **`innerHeight` = the large viewport** (constant), while
+`visualViewport.height` = the small viewport (changes). Any "fill the visible
+area" math must be driven off `visualViewport`, never off `innerHeight`/`vh`.
 
 The bars sit over the **edges of the layout viewport** and composite whatever DOM
 pixels are painted there.
@@ -46,15 +52,20 @@ pixels are painted there.
 - **`innerHeight` is constant; `visualViewport.height` is what changes** (bars,
   keyboard). Measure layout with `innerHeight`; detect keyboard/bar state with
   `visualViewport`.
-- **`dvh`/`vh` are treated as *indefinite* for flex/scroll height resolution.** A
-  `flex:1` / `overflow:auto` child inside a `dvh`-sized box won't scroll (it grows
-  to its content and the gesture falls through to the page). Use a **definite px**
-  height for scroll containers.
+- **A `flex:1` / `overflow:auto` child inside a `dvh`/`vh`-sized box often won't
+  scroll** (it grows to its content and the gesture falls through to the page).
+  **Try the standard fix first:** the usual culprit is `min-height:auto` on a flex
+  item — set **`min-height:0`** (or `min-height:0` on the flex child + the scroll
+  area) and it typically scrolls. Where that isn't enough, we've observed iOS 26
+  behaving as if `dvh`/`vh` heights resolve as *indefinite* for the child (so it
+  never gets a scrollable box); the reliable escape is a **definite px** height
+  (derived from `innerHeight`) on the scroll container. Verify per case.
 - **The glass bars cache their backdrop.** They only re-sample on a **scroll or
   layout change** — changing a background colour or repainting a canvas alone
   leaves the bar **stale**. A 1px scroll nudge forces a re-composite.
-- **Centre-scroll math must be measured, not `vh`-based** — `vh` (large) ≠
-  `innerHeight`/`visualViewport` (small), so a `vh` calculation leaves a strip.
+- **Centre-scroll math must be measured, not `vh`-based** — `vh`/`innerHeight`
+  (large) ≠ `visualViewport` (small), so a `vh` calculation leaves a strip.
+  Measure the visible band with `visualViewport.height`.
 
 ### `position:fixed` is the big one
 
@@ -86,8 +97,11 @@ and crops its children.)
 - **After dismissal the viewport can stay shifted** — `visualViewport.offsetTop`
   doesn't reset to 0 and the height can stay ~24px short — so content looks
   "slid up by the keyboard height." Affects fixed/sticky elements and any
-  scroll-positioned layout. (Even apple.com is affected; iOS 26.1 beta improved
-  it.)
+  scroll-positioned layout. (Even apple.com is affected.)
+- **Status (as of iOS 26.x):** WebKit #297779 is acknowledged by Apple; iOS 26.1
+  reduced the residual offset but reports of the stuck ~24px `offsetTop` persisted
+  into later 26.x releases. Treat the workaround below as still needed and
+  **re-verify on your current OS build** before assuming it's fixed.
 - Because **`innerHeight` is constant**, your intended scroll position is the
   **same whether the keyboard is open or closed** — so you can restore it the
   moment the field blurs, without waiting for the (late) close event.
@@ -171,11 +185,14 @@ scroll *while* the keyboard animates (iOS re-scrolls and undoes it).
 
 ## 6. Related WebKit canvas gotcha (not glass, but found here)
 
-`CanvasRenderingContext2D.filter` (e.g. `ctx.filter='blur(4px)'`) is **ignored on
-iOS/iPadOS Safari** (WebKit #198416) — the effect silently doesn't render, even
-though it works in Chrome. Use **`shadowBlur`** instead (draw the shape far
-off-canvas and keep only its blurred shadow, tinted as needed). SVG `feGaussian
-Blur` is fine; it's only the canvas 2D `filter` property that's unsupported.
+`CanvasRenderingContext2D.filter` (e.g. `ctx.filter='blur(4px)'`) **silently
+doesn't render by default on iOS/iPadOS Safari** — the effect is a no-op even
+though it works in Chrome. WebKit #198416 is **RESOLVED FIXED** (implemented in
+2024), but as of Safari/iOS 18–26.x the feature ships **disabled by default,
+behind a flag** — so in practice you can't rely on it. Use **`shadowBlur`**
+instead (draw the shape far off-canvas and keep only its blurred shadow, tinted
+as needed). SVG `feGaussianBlur` is fine; it's only the canvas 2D `filter`
+property that's off by default.
 
 ## Provenance
 
@@ -183,5 +200,18 @@ Established iteratively, on-device, building the Made in Lantau "Lantau Type Map
 (a full-screen canvas studio) for iOS Safari 26. Every fact in §2 and every
 problem in §4 was reproduced and fixed on a real iPhone/iPad.
 
-References: WebKit #297779 (keyboard/visualViewport offset), WebKit #198416
-(canvas `ctx.filter`).
+§1's model claims are corroborated beyond that build: the `theme-color` drop and
+"bars reflect the page / sample a fixed-or-sticky edge element's `background-color`
+then fall back to `body`" behavior match multiple independent Safari 26 write-ups
+(Apple published no official web-dev docs for it). The **`innerWidth <= 760`**
+gate is a **rule of thumb, not an Apple constant** — the split is by window width,
+but the exact breakpoint isn't documented; **measure/treat it as approximate** and
+tune per layout rather than copying 760 verbatim.
+
+Everything here is as-of **iOS/iPadOS 26.x**; behavior is evolving across point
+releases (see the keyboard-bug status note in §2). **Re-verify on your target OS
+build** before relying on any specific fact.
+
+References: WebKit #297779 (keyboard/visualViewport offset; acknowledged, partly
+improved in 26.1), WebKit #198416 (canvas `ctx.filter`; RESOLVED FIXED but
+disabled by default in shipping Safari 18–26.x).

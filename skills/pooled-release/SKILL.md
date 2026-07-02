@@ -3,15 +3,17 @@ name: pooled-release
 description: "Cut fewer, batched releases (a 'release train') instead of one per merge — by triggering semantic-release on demand or on a cadence rather than on every push to main. Use when releasing on every merge is too noisy, when you want one larger readable changelog per release, to add a manual 'cut a release' button (workflow_dispatch) or a scheduled/weekly release, to set up prerelease channels (next/beta → promote to stable), or when deciding whether you need a release branch."
 metadata:
   author: stealth-engine
-  version: "1.1.0"
+  co-author: wiiiimm
+  version: "1.2.1"
 ---
 
 # Pooled releases (release trains)
 
 Release on every merge is great for a fast-moving lib, but sometimes you want
 **fewer, fatter releases** — one readable changelog per cut, not a version bump per
-PR. This skill does that **without changing how you develop**: it only changes the
-release **trigger**. It builds directly on
+PR. For the manual and scheduled models it does that **without changing how you
+develop** — it only changes the release **trigger** (the prerelease-channel model in
+Model 3 does shift where you target work; see there). It builds directly on
 [`semantic-release-automation`](../semantic-release-automation/SKILL.md) — same
 plugin pipeline, same Conventional Commits; read that first.
 
@@ -65,6 +67,11 @@ first two; it ships with `workflow_dispatch` on and `schedule` commented.
      `{ "name": "beta", "prerelease": true }` entry only if you do.
    - Promote with a normal **merge or fast-forward** of `next` into `main` — semantic-
      release cuts the stable release once the commits are reachable from `main`, either way.
+   - **Known quirk:** the template runs `@semantic-release/changelog` + `git` on the
+     `next` branch too, so each `x.y.z-next.N` prerelease commits its own CHANGELOG
+     entries; the stable cut then regenerates notes for the same commits. If the
+     duplicated prerelease sections bother you, scope the `changelog`/`git` plugins to
+     stable only (e.g. via a per-branch config) or accept the noise on `next`.
 
 ## Release branches — usually don't
 
@@ -90,13 +97,22 @@ Start from `semantic-release-automation`'s `release.yml` and:
 
 - **`schedule` only runs once the workflow file is on the default branch** — merge it
   to `main` before expecting cron to fire; `cron` is UTC.
+- **The branch guard must special-case `schedule`.** On scheduled runs
+  `github.event.repository` is empty, so a bare
+  `if: github.ref_name == github.event.repository.default_branch` evaluates to
+  `main == ''` → false and **silently skips every cron run**. The template's guard
+  short-circuits with `github.event_name == 'schedule' ||` (safe — `schedule` only
+  fires on the default branch); keep that clause if you adapt the guard.
 - **`fetch-depth: 0` still required** (full history + tags for the batched analysis).
 - **`concurrency: { group: release }`** so a manual run and a scheduled run can't
   collide on the tag push.
 - **`workflow_dispatch` lets the runner pick any branch** — the Actions UI branch
   dropdown (or `gh workflow run --ref <branch>`) means a manual run could analyze a
   feature/prerelease branch instead of `main`. The template guards this with a
-  job-level `if: github.ref_name == github.event.repository.default_branch`; keep it.
+  job-level `if: github.event_name == 'schedule' || github.ref_name == github.event.repository.default_branch`;
+  keep it. (`semantic-release-automation`'s push-triggered `release.yml` carries the
+  same guard on its `workflow_dispatch` path, so the two templates stay consistent —
+  a manual dispatch on either can only cut a release from the default branch.)
 - **Big gaps → big changelogs.** That's the point, but communicate the cadence so
   contributors know when their merged work actually ships.
 - **Pooling does NOT gate production deploys — wire that separately.** If a platform

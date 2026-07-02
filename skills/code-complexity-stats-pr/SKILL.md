@@ -3,7 +3,8 @@ name: code-complexity-stats-pr
 description: Add a GitHub Actions workflow that posts code-size and cost statistics — lines of code, per-language breakdown, complexity, and a COCOMO "what would this cost to build" estimate — as a sticky comment on every pull request, using scc. Use when you want a per-PR code-stats or "worth of the codebase" comment, to show LOC / language breakdown or an estimated development cost/effort on PRs, to set up scc (Sloc Cloc and Code) in CI, to post or upsert a single self-updating bot comment from GitHub Actions, or to change the COCOMO salary/currency. Covers fork-PR token limits, runner architecture, version pinning, and comment pagination.
 metadata:
   author: stealth-engine
-  version: "1.1.0"
+  co-author: wiiiimm
+  version: "1.2.0"
 ---
 
 # Code complexity / cost stats on every PR
@@ -28,7 +29,7 @@ It reports the **whole codebase at the PR's head**, not the diff — it's a
 
 Copy [`templates/code-complexity.yml`](./templates/code-complexity.yml) to
 `.github/workflows/code-complexity.yml`. It works as-is on `ubuntu-latest`; the
-only thing you'll likely change is `--avg-wage` (and the currency note).
+only thing you'll likely change is the `AVG_WAGE` / `WAGE_LABEL` workflow env (see Customise).
 
 ## How it works (the parts that matter)
 
@@ -47,14 +48,16 @@ only thing you'll likely change is `--avg-wage` (and the currency note).
   don't race two comment updates. Keyed on the number, not `head_ref`, so two
   forks sharing a branch name can't cancel each other.
 - **COCOMO cost:** `scc --avg-wage <annual>` drives the cost figure. The number is
-  unitless to scc — it's read in *your* currency. The template uses `360000`
-  (HKD 30,000/month) and labels the comment HKD; change both together.
+  unitless to scc — it's read in *your* currency. The template defines `AVG_WAGE`
+  (`360000`, HKD 30,000/month) and `WAGE_LABEL` once as workflow `env`, so the
+  number scc uses and the label in the comment can't drift — change the salary in
+  one place.
 
 ## Customise
 
 | Want to… | Change |
 | --- | --- |
-| Use a different currency / salary | `--avg-wage <annual-number>` **and** the HKD label in the comment body |
+| Use a different currency / salary | the `AVG_WAGE` and `WAGE_LABEL` workflow `env` (one place — the comment label reads `WAGE_LABEL`) |
 | Exclude more build/generated dirs | `--exclude-dir` list (comma-separated). scc honours `.gitignore` by default; this is for output that isn't ignored |
 | Pin / upgrade scc | `SCC_VERSION` in the install step |
 | Run on ARM runners | swap the tarball to `scc_Linux_arm64.tar.gz` and use an ARM runner (e.g. `ubuntu-24.04-arm`) |
@@ -66,9 +69,10 @@ only thing you'll likely change is `--avg-wage` (and the currency note).
   with a **read-only** token and no repo secrets, so the comment API call would
   403. Declaring `pull-requests: write` does **not** override this — GitHub
   enforces read-only on the token itself for fork-triggered runs. The template
-  guards the comment step with
+  guards the **whole job** with
   `if: github.event.pull_request.head.repo.full_name == github.repository`, so on
-  fork PRs it **skips cleanly** (green check) instead of failing red. Options:
+  fork PRs the job **skips cleanly** (green check) instead of failing red — and no
+  compute is wasted running scc for a comment that can't post. Options:
   (a) accept that stats only post for same-repo branches (fine for solo/team
   repos — the common case; this is the template default); or (b) split into two
   workflows — compute on `pull_request` (no secrets,
@@ -82,12 +86,18 @@ only thing you'll likely change is `--avg-wage` (and the currency note).
   on a big repo could blow past it, which *would* 422 the step — so the template
   trims to ~64k with a "truncated" note and the comment still posts.
 - **Pin scc; don't track `latest`.** A `latest` download can change scc's output
-  format and silently reshape every PR comment. The template pins `SCC_VERSION`.
+  format and silently reshape every PR comment. The template pins `SCC_VERSION`
+  **and** verifies the tarball against a pinned `SCC_SHA256` (`sha256sum -c`)
+  before running it, so a swapped/compromised release asset fails the run instead
+  of executing in CI. When you bump the version — or switch to the arm64 asset —
+  update the checksum from that release's `checksums.txt`.
 - **Match the tarball to the runner arch.** The release asset is arch-specific
   (`scc_Linux_x86_64.tar.gz` vs `_arm64`). The wrong one fails to run.
 - **Paginate when finding the sticky comment.** A busy PR can have more comments
   than one API page; without pagination, the marker comment on a later page is
-  missed, and you get duplicates. The template uses `github.paginate(...)`.
+  missed, and you get duplicates. The template uses `github.paginate(...)` and
+  matches the marker with `startsWith` (not `includes`) so a human comment that
+  merely quotes the marker isn't mistaken for the bot's and overwritten.
 - **Token: `GH_TOKEN || github.token`.** The template prefers a `GH_TOKEN` secret
   (a PAT/bot you already use) and falls back to **`github.token`** — the canonical
   reference to the built-in `GITHUB_TOKEN`. Prefer `github.token` over
@@ -100,6 +110,7 @@ only thing you'll likely change is `--avg-wage` (and the currency note).
 ## Provenance
 
 Generalised from the working `code-complexity.yml` used in production repos
-(`cphk`, `piaf-monorepo`): same scc + COCOMO + sticky-comment approach, hardened
-here with version pinning, comment pagination, a portable `ubuntu-latest` runner,
-and the fork-PR security note.
+(a production app, a production monorepo): same scc + COCOMO + sticky-comment approach, hardened
+here with version pinning + checksum verification, `persist-credentials: false`,
+comment pagination, a portable `ubuntu-latest` runner, and the fork-PR security
+note.

@@ -18,6 +18,10 @@ export const defaultCookieOptions = {
   // document.cookie. httpOnly:true keeps it out of reach of injected scripts.
   // Override with httpOnly:false only if client JS must read it.
   httpOnly: true,
+  // Persist the toggle's choice across sessions (1 year) — without maxAge this is
+  // a session cookie that dies on browser close and the "choice persists" promise
+  // (and parity with nextjs-locale-standalone) breaks.
+  maxAge: 60 * 60 * 24 * 365,
 };
 
 export function createI18nConfig(config: I18nConfig): Required<I18nConfig> {

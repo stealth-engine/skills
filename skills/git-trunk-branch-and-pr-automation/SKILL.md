@@ -3,7 +3,8 @@ name: git-trunk-branch-and-pr-automation
 description: "Trunk-based Git workflow with enforced branch naming and squash-merge PR titles. Use when setting up or standardising a branch/PR workflow, naming branches (feature/ fix/ hotfix/ and AI-agent prefixes claude/ cursor/ codex/ copilot/ codegen-bot/ dependabot/), configuring squash-only merges where the PR title becomes the commit and the body is the concatenated commits, making the PR title a valid Conventional Commit, adding GitHub Actions that validate branch names or auto-normalise PR titles, fixing a PR-title bot that loops, or deciding trunk vs release branches. Covers the GitHub repo settings, the validation/normalisation workflows, and how it feeds semantic-release."
 metadata:
   author: stealth-engine
-  version: "1.1.0"
+  co-author: wiiiimm
+  version: "1.2.0"
 ---
 
 # Trunk-based branches + squash-PR automation
@@ -85,8 +86,12 @@ the fork/bot validate path (it never edits there, so there's nothing to suppress
 
 - **Three modes — and don't loop on your own edits.** The template classifies each
   PR: `skip` only for **`github-actions[bot]`** (its *own* title edits — the workflow
-  listens for `edited` to re-validate human changes, and skipping its own identity is
-  what stops the loop); `validate` for **forks and other bots like dependabot**
+  listens for `edited` to re-validate human changes, and skipping its own identity
+  stops the loop). With the **default `GITHUB_TOKEN` this is belt-and-braces** —
+  GitHub deliberately doesn't retrigger workflows on events its own token caused, so
+  the bot's edit wouldn't re-fire anyway; the skip only *matters* if you swap in a PAT
+  or GitHub App token (whose edits **do** retrigger), so keep it. `validate` for
+  **forks and other bots like dependabot**
   (read-only/untrusted → title is checked but never auto-edited); `normalize` for
   same-repo human PRs (run the script + fix the title). Don't blanket-skip all bots —
   a non-self bot with a non-conventional title would otherwise merge unchecked.
@@ -125,7 +130,7 @@ the fork/bot validate path (it never edits there, so there's nothing to suppress
 
 ## Sources
 
-- Generalised from `cphk`'s `branch-name-check.yml` (the
+- Generalised from a production app's `branch-name-check.yml` (the
   `feature|fix|hotfix|codegen-bot|copilot|codex|cursor|claude|dependabot` prefix
   set) and `pr-title-manager.yml` + `normalize-pr-title.js` (title normalisation,
   the `skip-title-automation` label opt-out, bot-cascade guard, sticky comment).

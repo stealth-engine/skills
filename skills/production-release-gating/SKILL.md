@@ -3,7 +3,8 @@ name: production-release-gating
 description: "Stop every push/merge to main from shipping to production — deploy only on a real release. Use when a merge to main unexpectedly deploys to prod, when you want production to deploy only on a semantic-release version (not every commit), when setting up preview-on-feature-branch but gated-prod-on-main, wiring a Vercel Ignored Build Step / `ignoreCommand`, promoting to a staging/`production` branch, or triggering a deploy from a published GitHub Release (GKE, self-hosted, dispatchable targets). Covers three named patterns — Release-Triggered Deploy (`on: release`, `types: [published]`), Promotion Branch (staging/`production`, most portable), and Build-Skip Gate (the Vercel `ignoreCommand` script) — when to use which, works with both per-merge and pooled releases, branch-aware previews, and monorepo dependency-release handling."
 metadata:
   author: stealth-engine
-  version: "1.3.0"
+  co-author: wiiiimm
+  version: "1.4.0"
 ---
 
 # Gating production deploys to real releases
@@ -94,11 +95,22 @@ nothing.
 - **Tag shape is validated:** the deploy step refuses a `tag_name` that isn't SemVer
   (`v?MAJOR.MINOR.PATCH`), so a stray/mis-shaped tag can't roll out. Adjust the regex
   to your scheme.
-- `concurrency` is a **global** group (`prod-release`, not per-tag) with
-  `cancel-in-progress: false`, so deploys never run concurrently and an in-progress
-  rollout is never half-killed. **Caveat:** GitHub keeps only one *pending* run per
-  group, so a newer release can evict an older **queued** one — if every tag must
-  deploy, add an external queue/lock rather than relying on concurrency alone.
+- **Ancestry is enforced (parity with Promotion Branch):** before deploying, the step
+  fetches the default branch and runs `git merge-base --is-ancestor "$SHA"
+  origin/<default>`, refusing a tag whose commit isn't on the default branch — so a tag
+  published on off-main/unrelated code (anyone with `contents: write` can push
+  `v9.9.9`) can't roll that code out to prod. The branch is auto-resolved from
+  `github.event.repository.default_branch`; override `DEFAULT_BRANCH` only if you cut
+  releases from a branch other than the repo default.
+- `concurrency` uses **two global groups, not per-tag**: stable releases share
+  `prod-release` and prereleases get a **separate** `prod-release-prerelease` group,
+  both with `cancel-in-progress: false`, so deploys never run concurrently and an
+  in-progress rollout is never half-killed. The split matters because concurrency is
+  joined **before** the job-level `prerelease` `if` — a shared group would let a
+  skipped prerelease run evict a queued **stable** deploy from the single pending slot.
+  **Caveat:** GitHub keeps only one *pending* run per group, so even among stable
+  releases a newer one can evict an older **queued** one — if every tag must deploy,
+  add an external queue/lock rather than relying on concurrency alone.
 
 ## Promotion Branch — staging `main`, fast-forward `production`
 
@@ -145,10 +157,21 @@ Git → Ignored Build Step. Logic:
 - **`main`, anything else →** skip.
 - **`[skip-deploy]`** on any branch → skip.
 
+The release regexes **require a stable SemVer version anchored on the right**
+(`X.Y.Z` at end-of-string or before whitespace), so a **prerelease** commit like
+`chore(release): 1.2.3-next.1` (semantic-release `next`/`beta` channels cut from
+`main`) does **not** match and does **not** ship to prod — matching the
+`prerelease`-guarded Release-Triggered/Promotion gates. The script also **fails
+closed**: if `git` can't read the message, an empty message falls through to the
+`main` skip rather than erroring (a non-zero exit reads as *build* on Vercel).
+
 **Monorepo:** Vercel's "Skipping Unaffected Projects" is layer 1 (Turborepo graph);
 this script is layer 2. A per-app script also builds when a **dependency package**
-releases — add a clause like `^chore\((configs|i18n-routing)\):.*release` (shown
-commented in the template) so an app redeploys when its shared lib version bumps.
+releases — add a clause like
+`^chore\((shared-lib|design-system)\):\ release\ v?[0-9]+\.[0-9]+\.[0-9]+` (shown
+commented in the template, with the same anchored-version requirement so non-release
+`chore(shared-lib): …` commits don't build) so an app redeploys when its shared lib
+version bumps.
 
 ## Gotchas
 
@@ -174,7 +197,11 @@ commented in the template) so an app redeploys when its shared lib version bumps
   keys on the *Release event*, not the push.
 - **Pre-releases must not reach prod.** Both the deploy and promote jobs gate on
   `if: ${{ !github.event.release.prerelease }}`; without it, a `next`/`beta` Release
-  would ship to production. Keep the guard if you adapt these.
+  would ship to production. Keep the guard if you adapt these. The **Build-Skip Gate**
+  has no release event to read `prerelease` from, so it enforces the same rule via its
+  regex — the version is anchored on the right (`X.Y.Z` at end/whitespace) so a
+  `chore(release): 1.2.3-next.1` prerelease commit doesn't match; don't loosen that
+  anchor or prereleases start shipping prod.
 - **Supply chain — pin actions to commit SHAs for a hardened posture.** These
   workflows run with `contents: write`, and `@v7`/`@v9` are **mutable tags** — even
   first-party `actions/*` tags can be re-pointed — so for strict supply-chain safety
@@ -194,9 +221,9 @@ commented in the template) so an app redeploys when its shared lib version bumps
 
 ## Sources
 
-- Generalised from production repos: `cphk` (Release-Triggered Deploy — `on: release` /
+- Generalised from production repos: a production app (Release-Triggered Deploy — `on: release` /
   `types: [published]` dispatches a GKE deploy and annotates the Release with status)
-  and `piaf-monorepo`
+  and a production monorepo
   (Build-Skip Gate — per-app `vercel.json` `ignoreCommand` → `vercel-ignore-<app>.sh`
   with branch/release/dependency-aware exit codes).
 - Vercel Ignored Build Step: <https://vercel.com/docs/projects/overview#ignored-build-step>

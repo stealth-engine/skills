@@ -16,6 +16,12 @@ export function setLocaleOnResponse(
   config: Required<I18nConfig>,
   varyOnNegotiation = false
 ): NextResponse {
+  // NOTE: this stamps x-locale on the *response* (diagnostics / downstream
+  // proxies) — it is NOT visible to server components via headers(). Those read
+  // the locale from the [locale] route param, not this header. To expose the
+  // locale to the app's request pipeline instead, forward it on next():
+  // NextResponse.next({ request: { headers: (() => { const h = new Headers(
+  //   request.headers); h.set('x-locale', locale); return h; })() } }).
   response.headers.set('x-locale', locale);
 
   // Cache must vary by the inputs that decide the locale — but only when the

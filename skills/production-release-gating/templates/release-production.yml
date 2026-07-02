@@ -33,10 +33,16 @@ jobs:
     timeout-minutes: 30 # don't hold the prod-release concurrency slot if a rollout hangs
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # need history to verify the tag descends from the default branch
 
       - name: Deploy to production
         env:
           VERSION: ${{ github.event.release.tag_name }}
+          # The release must come from the repo's default branch — resolved from the
+          # event payload, so this works regardless of its name. Override only if you
+          # cut releases from a branch OTHER than the repo default.
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
           # Require a real SemVer core (X.Y.Z, no leading zeros), anchored at BOTH
@@ -46,6 +52,18 @@ jobs:
           # `-rc.N`/`+build` suffix) for your tag scheme if you publish those stable.
           if [[ ! "$VERSION" =~ ^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "::error::$VERSION is not a SemVer release tag — refusing to deploy."
+            exit 1
+          fi
+          # Guard: only deploy commits that are on the default branch. Anyone with
+          # `contents: write` can tag an arbitrary commit `v9.9.9` and publish a
+          # Release; without this, that off-main code would roll out to prod. Fetch
+          # the default branch into the SAME ref we validate against, so the check
+          # can't pass against a stale/missing ref. (Parity with the Promotion Branch
+          # gate's ancestry guard.)
+          SHA="$(git rev-list -n1 "refs/tags/$VERSION")"
+          git fetch --no-tags origin "$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
+          if ! git merge-base --is-ancestor "$SHA" "refs/remotes/origin/$DEFAULT_BRANCH"; then
+            echo "::error::$VERSION ($SHA) is not an ancestor of origin/$DEFAULT_BRANCH — refusing to deploy."
             exit 1
           fi
           echo "Deploying $VERSION to production…"

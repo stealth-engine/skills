@@ -3,7 +3,8 @@ name: semantic-release-automation
 description: "Automate versioning, changelog, tags, GitHub Releases, and npm publishing from Conventional Commits with semantic-release. Use when setting up or debugging automated releases, wiring a `.releaserc` / `release` config and the plugin pipeline (commit-analyzer, release-notes-generator, changelog, npm, git, github), making `main` cut a version on merge, generating CHANGELOG.md, publishing to npm or creating a GitHub Release per release, doing per-package releases in a monorepo (per-package tags + paths-filter matrix), pooling commits into a less-frequent release, or fixing a release that didn't fire / a CI loop from the release commit. Covers the single-package and monorepo flavors and the GitHub Actions workflow."
 metadata:
   author: stealth-engine
-  version: "1.2.0"
+  co-author: wiiiimm
+  version: "1.3.1"
 ---
 
 # semantic-release automation
@@ -106,7 +107,7 @@ The workflow detects **which packages changed** with `dorny/paths-filter` and ru
       steps:
         - uses: actions/checkout@v7
         - id: f
-          uses: dorny/paths-filter@v3
+          uses: dorny/paths-filter@v4
           with:
             filters: | # name each key after the package's directory
               apps/web: ['apps/web/**']
@@ -122,7 +123,7 @@ The workflow detects **which packages changed** with `dorny/paths-filter` and ru
       runs-on: ubuntu-latest
       steps:
         - uses: actions/checkout@v7
-          with: { fetch-depth: 0 }
+          with: { fetch-depth: 0 } # add persist-credentials: false to use GH_TOKEN below (private repos then need it wired into the git pull, e.g. a URL with the token)
         - uses: actions/setup-node@v6
           with: { node-version: lts/*, cache: npm }
         - run: npm ci
@@ -130,9 +131,15 @@ The workflow detects **which packages changed** with `dorny/paths-filter` and ru
           env: { GITHUB_TOKEN: '${{ secrets.GH_TOKEN || github.token }}' }
           # An earlier matrix job may have pushed its release commit; rebase + retry
           # so this job isn't behind main when it pushes its own tag.
+          # --repository-url (as in the single-package template) guards against an
+          # org/repo rename desyncing package.json's repository field (EMISMATCHGITHUBURL).
           run: |
-            git pull --rebase origin main || true
-            npx semantic-release || { git pull --rebase origin main; npx semantic-release; }
+            R="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+            # checkout defaults to detached HEAD on push — land on the branch so the
+            # rebase-retry has a branch to rebase onto (and to push the tag from).
+            git checkout "$GITHUB_REF_NAME"
+            git pull --rebase origin "$GITHUB_REF_NAME" || true
+            npx semantic-release --repository-url "$R" || { git pull --rebase origin "$GITHUB_REF_NAME"; npx semantic-release --repository-url "$R"; }
   ```
 
   `dorny/paths-filter` emits `changes` as a JSON array of the matched filter keys;
@@ -153,9 +160,12 @@ Use [`templates/release.yml`](./templates/release.yml). Non-negotiables:
 
 - **`fetch-depth: 0`** — semantic-release needs full history + tags.
 - **Don't loop:** the `chore(release): …` commit it pushes would re-trigger the
-  workflow. Guard with `if: !startsWith(github.event.head_commit.message, 'chore(release):')`
-  (this template) **or** put `[skip ci]` in the release commit message (the
-  monorepo template) if your CI honours it.
+  workflow. Guard with `if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}`
+  (this template — the `${{ }}` wrapper is **required**; a bare leading `!` is invalid
+  YAML) **or** put `[skip ci]` in the release commit message (the
+  monorepo template) if your CI honours it. The template's guard also restricts the
+  `workflow_dispatch` (manual / pooled) path to the **default branch**, so a manual
+  run can't accidentally cut a release from a feature branch.
 - **Token:** the built-in `GITHUB_TOKEN` works for tags/Releases, but commits it
   makes **won't trigger other workflows**. If a release must kick off a downstream
   deploy via `on: push`/`on: release`, use a **PAT/bot `GH_TOKEN`**. (See
@@ -202,9 +212,12 @@ only the trigger changes).
 
 ## Verify
 
-`npx semantic-release --dry-run` on a branch prints the next version and release
-notes **without** publishing — the fastest way to confirm your config and that the
-commits produce the bump you expect.
+`npx semantic-release --dry-run` prints the next version and release notes
+**without** publishing — the fastest way to confirm your config and that the
+commits produce the bump you expect. Run it on a **branch listed in `branches`**
+(e.g. `main`); on any other branch semantic-release logs "skipping" and prints no
+version — pass `--branches "$(git branch --show-current)"` to force it on a feature
+branch.
 
 ## See also
 
@@ -222,7 +235,7 @@ commits produce the bump you expect.
 
 - semantic-release docs & plugin pipeline: <https://semantic-release.gitbook.io/semantic-release/>
 - Default release rules (`angular` preset): <https://github.com/semantic-release/commit-analyzer/blob/master/lib/default-release-rules.js>
-- Patterns generalised from production repos: `gh-manager-cli` (single-package, npm
+- Patterns generalised from production repos: a published npm CLI (single-package, npm
   publish, `config in package.json`, no-loop `if` guard, `--repository-url` fix) and
-  `piaf-monorepo` (per-package `.releaserc` + `tagFormat`, `dorny/paths-filter`
+  a production monorepo (per-package `.releaserc` + `tagFormat`, `dorny/paths-filter`
   matrix, `@semantic-release/exec` prepare step, `[skip ci]` release commit).
