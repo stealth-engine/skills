@@ -4,7 +4,7 @@
 // Valid as long as every page lives under app/[locale]/.
 
 import { notFound } from 'next/navigation';
-import { supportedLanguages, isValidLocale } from '@/lib/i18n';
+import { supportedLanguages } from '@/lib/i18n';
 import { LocaleProvider } from '@/app/locale-provider';
 import '../globals.css';
 
@@ -13,15 +13,25 @@ export function generateStaticParams() {
   return supportedLanguages.map((l) => ({ locale: l.id }));
 }
 
+type Params = { locale: string };
+
 export default async function LocaleLayout({
   children,
   params,
 }: {
   children: React.ReactNode;
-  params: Promise<{ locale: string }>;
+  // Next 15 made `params` a Promise; Next 14 passes it synchronously. Accept
+  // both and `await Promise.resolve(...)` so the layout works on either major.
+  params: Params | Promise<Params>;
 }) {
-  const { locale } = await params;
-  if (!isValidLocale(locale)) notFound();
+  const { locale: rawLocale } = await Promise.resolve(params);
+  // Match case-insensitively (URLs may arrive as `/EN-HK/…`) but render with the
+  // canonical id so the provider and `<html lang>` always get the supported casing.
+  const lang = supportedLanguages.find(
+    (l) => l.id.toLowerCase() === rawLocale.toLowerCase()
+  );
+  if (!lang) notFound();
+  const locale = lang.id;
 
   return (
     <html lang={locale}>

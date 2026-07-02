@@ -22,7 +22,10 @@ const HAS_FILE_EXT = /\.[a-z0-9]+(?:$|[?#])/i;
 
 function shouldSkip(pathname: string): boolean {
   return (
-    pathname.startsWith('/_next') ||
+    // Segment-aware (like /api below) so a real route such as /_nextjs isn't
+    // skipped — only Next's own /_next/* internals.
+    pathname.startsWith('/_next/') ||
+    pathname === '/_next' ||
     pathname === '/api' ||
     pathname.startsWith('/api/') || // not '/api' alone — would catch '/apiary'
     pathname.startsWith('/.well-known') ||
@@ -47,7 +50,9 @@ export function proxy(request: NextRequest) {
       defaultLocale;
 
     const url = request.nextUrl.clone();
-    url.pathname = `/${locale}${pathname}`;
+    // Root `/` → `/<locale>` (no trailing slash), so the redirect lands on the
+    // canonical path and avoids an extra trailing-slash canonicalization hop.
+    url.pathname = `/${locale}${pathname === '/' ? '' : pathname}`;
     // The locale here was negotiated from Cookie / Accept-Language → Vary on them.
     return stampLocale(NextResponse.redirect(url), request, locale, true);
   }
@@ -84,7 +89,11 @@ function stampLocale(
     res.cookies.set(LOCALE_COOKIE, locale, {
       path: '/',
       sameSite: 'lax',
-      httpOnly: false, // readable by client code / analytics; not a secret
+      // Server-only by default: nothing reads NEXT_LOCALE from client JS (the
+      // toggle relies on the proxy rewriting the cookie; the server reads it via
+      // request.cookies). httpOnly:true keeps it out of reach of injected
+      // scripts. Set false only if client JS genuinely must read it.
+      httpOnly: true,
       secure: req.nextUrl.protocol === 'https:',
       maxAge: 60 * 60 * 24 * 365,
     });

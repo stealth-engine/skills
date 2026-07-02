@@ -31,6 +31,20 @@ does **not** edit). Give it the diff plus the changed files for context.
 > Return `[]` if nothing real. Do not invent issues to seem thorough — a clean diff
 > is a valid result.
 
+**Large-diff variant — don't inline a huge diff.** Subagents share the working
+directory, so for a big change set, pass the **base ref + scope** and have the subagent
+produce the diff itself instead of pasting it into the prompt (keeps the orchestrator
+message and the subagent's context lean). Swap the `Diff:` block above for:
+
+> Base: `{{base}}` · Scope: `{{committed|uncommitted|all}}`
+> Generate the diff yourself, then review only it:
+> - committed: `git diff {{base}}...HEAD`
+> - uncommitted: `git diff` **and** `git diff --staged`
+> - all: `git diff $(git merge-base {{base}} HEAD)`
+>
+> Use the SAME scope handed to Reviewer B. Read full changed files for context; report
+> only on changed lines. Same JSON output shape as above.
+
 **Optional extra lenses (Reviewer C+)** — same shape, swap the focus line:
 - *Security:* "Focus on authn/authz, injection, secrets, SSRF, unsafe deserialization,
   path traversal, and untrusted-input handling."
@@ -54,9 +68,13 @@ reviewer that never ran).
 `uncommitted` review.
 
 ```bash
-# Auth gate. UNAVAILABLE is a distinct outcome from "reviewed, no findings" — emit a
-# clear status marker, never an empty `[]` (which the orchestrator would read as a
-# clean review), so Reviewer B is counted as absent, not passing.
+# Availability gate. UNAVAILABLE is a distinct outcome from "reviewed, no findings" —
+# emit a clear status marker, never an empty `[]` (which the orchestrator would read as
+# a clean review), so Reviewer B is counted as absent, not passing. Distinguish
+# "binary missing" from "installed but not logged in" — they need different fixes.
+if ! command -v coderabbit >/dev/null 2>&1; then
+  echo 'STATUS=coderabbit-unavailable reason=not-installed'; exit 0
+fi
 if ! coderabbit auth status >/dev/null 2>&1; then
   echo 'STATUS=coderabbit-unavailable reason=not-authenticated'; exit 0
 fi

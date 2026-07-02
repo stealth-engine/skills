@@ -3,7 +3,7 @@ name: resolve-merge-conflicts
 description: "Resolve git merge/rebase conflicts non-destructively — preserving the intent of BOTH sides — and hand off to a human when a conflict can't be resolved safely. Use when a branch or PR has conflicts with its base ('this branch has conflicts that must be resolved', GitHub mergeable=CONFLICTING / mergeStateStatus=DIRTY), when a rebase / merge / cherry-pick / stash / revert stops with conflict markers (<<<<<<< ======= >>>>>>>), when a PR is behind base and needs updating, when syncing a long-lived branch or back-merging a hotfix, or when deciding rebase vs merge. Covers the safe-resolution rules (no blind -X ours/theirs, hunk-by-hunk with diff3, abort/reflog escape hatches, verify-after), the rebase ours/theirs inversion, lockfile/rename/semantic conflicts, and the escalate-when-stuck criteria."
 metadata:
   author: stealth-engine
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Resolve merge conflicts (non-destructively)
@@ -57,8 +57,9 @@ resolve once. **Never rebase a branch other people are actively committing to.**
 5. **Force-push only `--force-with-lease`, only your own PR branch.** Plain
    `--force` clobbers teammate commits pushed since your last fetch; `--with-lease`
    refuses if the remote moved.
-6. **Never commit conflict markers.** Run `git diff --check` (and a grep for
-   `<<<<<<<`) before `--continue`/commit.
+6. **Never commit conflict markers.** Run `git diff --check` **and**
+   `git diff --cached --check` (staged markers won't show in the unstaged diff after
+   `git add`), plus a grep for `<<<<<<<`, before `--continue`/commit.
 
 ## The loop
 
@@ -79,8 +80,9 @@ resolve once. **Never rebase a branch other people are actively committing to.**
   let one side's deletion silently win. (`git status` labels these.)
 - **Lockfiles** (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `Cargo.lock`) →
   **do not hand-merge.** Take one side, then **regenerate** from the merged manifest
-  (`npm install` / `pnpm install --lockfile-only` / etc.) so the lock matches the
-  resolved `package.json`. This is the *legitimate* use of "take one side."
+  (`npm install --package-lock-only` / `pnpm install --lockfile-only` / etc.) so the
+  lock matches the resolved `package.json`. This is the *legitimate* use of "take one
+  side."
 - **Generated/build output** → regenerate from source, never merge by hand.
 - **Binary** → you can't merge text; pick a side deliberately or escalate.
 - **Semantic** → the file merges with **zero markers** but is logically broken (one

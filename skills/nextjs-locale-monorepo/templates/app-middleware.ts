@@ -18,7 +18,9 @@ const i18n = createI18nMiddleware(
     // on the middleware rewriting the cookie, the server reads it via
     // request.cookies). Keep httpOnly:true so injected scripts can't read it.
     // Only set httpOnly:false if you genuinely need client JS to read it.
-    cookieOptions: { path: '/', sameSite: 'lax', httpOnly: true },
+    // maxAge (1 year) persists the toggle's choice across browser restarts;
+    // it also defaults from the engine, so you can omit it here.
+    cookieOptions: { path: '/', sameSite: 'lax', httpOnly: true, maxAge: 60 * 60 * 24 * 365 },
   })
 );
 

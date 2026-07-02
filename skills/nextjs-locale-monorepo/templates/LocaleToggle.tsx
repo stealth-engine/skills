@@ -17,7 +17,7 @@ export function LocaleToggle() {
     // Match the first segment case-insensitively (the middleware/layout accept
     // `/EN-HK/…`), else `/EN-HK/x` would gain a second prefix: `/zh-hk/EN-HK/x`.
     const first = segments[0]?.toLowerCase();
-    if (supportedLanguages.some((l) => l.id === first)) {
+    if (supportedLanguages.some((l) => l.id.toLowerCase() === first)) {
       segments[0] = locale; // replace existing prefix
     } else {
       segments.unshift(locale); // unprefixed — add one

@@ -3,7 +3,7 @@ name: dual-agent-review
 description: "Review a change set with two or more independent AI reviewers in parallel — a Sonnet subagent and the CodeRabbit CLI — then merge + dedupe their findings, triage valid vs invalid, fix (directly or via parallel fix-subagents), and hand back a report of what was fixed/how and what was ignored/why. Use when asked to 'review my changes with two/multiple agents', 'dual-agent / multi-reviewer review', 'get a second opinion from Sonnet and CodeRabbit', 'review the diff and fix the valid issues', 'run parallel reviewers and fix in parallel', or to cross-check one reviewer against another before committing. Diff-scoped by default (branch-vs-base or the PR diff), like CodeRabbit — NOT a whole-repo audit."
 metadata:
   author: stealth-engine
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Dual-agent review
@@ -24,7 +24,8 @@ The unit of review is the **change set**, not the whole repo — same default as
 CodeRabbit (a diff/PR reviewer). Default = the branch's diff vs its base (or a PR's
 diff). The **diff is the report scope; the full changed files are context** — a
 reviewer reads surrounding code to judge a change but only reports on changed lines.
-For a *whole-codebase* sweep you need a different, partitioned skill — this isn't it.
+For a *whole-codebase* sweep use the partitioned
+[`multi-agent-codebase-audit`](../multi-agent-codebase-audit/SKILL.md) instead — this isn't it.
 
 ## The flow
 
@@ -50,6 +51,10 @@ identical change set**. Each scope maps to a CodeRabbit `-t` value (Reviewer B):
   stays stable if `<base>` advances — the same anchor the three-dot `committed` diff uses).
 
 Note the base and the list of changed files; you'll hand both to the reviewers.
+
+> **New/untracked files are invisible to `git diff`.** For `uncommitted`/`all`, stage
+> new files first (`git add -N <path>` — an intent-to-add marks them so their contents
+> show in the diff) or they silently escape review.
 
 ## 2. Fan out reviewers (independent, parallel)
 
@@ -140,7 +145,8 @@ unless the verify step actually passed.
   same prompt verbatim), they converge and you lose the cross-check. Keep them
   separate and, ideally, differently framed.
 - **Diff-scoped, not a repo audit.** Pointing this at "the whole project" gives a huge,
-  context-blowing diff and shallow results. Use a partitioned whole-repo skill for that.
+  context-blowing diff and shallow results. Use
+  [`multi-agent-codebase-audit`](../multi-agent-codebase-audit/SKILL.md) for that.
 
 ## Setup (one-time)
 
@@ -161,6 +167,10 @@ The Sonnet reviewer needs no setup beyond the orchestrator's own subagent capabi
 - [`reference/reviewer-prompts.md`](./reference/reviewer-prompts.md) — the Sonnet
   reviewer prompt, CodeRabbit CLI recipes, the parallel fix-subagent prompt, and the
   report template.
+- [`multi-agent-codebase-audit`](../multi-agent-codebase-audit/SKILL.md) — the
+  **whole-repo** sibling: maps and partitions the entire codebase, fans out one+ auditor
+  per slice, and reports with a coverage ledger. Use that for "audit the whole project";
+  use *this* for a diff/change-set cross-review.
 - [`autonomous-pr-driver`](../autonomous-pr-driver/SKILL.md) — the **PR-lifecycle**
   cousin: drives a GitHub PR's *bot* reviews (CodeRabbit/Cursor/Bugbot via PR comments)
   to green and pings a human to merge. Use that for "land this PR"; use *this* for an

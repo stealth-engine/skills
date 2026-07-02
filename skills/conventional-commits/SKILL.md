@@ -3,7 +3,7 @@ name: conventional-commits
 description: "The Conventional Commits format — also called \"semantic commits\" / semantic commit messages — a `type(scope): description` header (`feat`, `fix`, …) plus an optional `BREAKING CHANGE` footer, and how it makes history machine-readable to drive automated version bumps and changelogs. Use when writing a commit message or PR title, deciding the type/scope/bump for a change, setting up or fixing a repo's commit convention, making commits parseable by semantic-release / changelog tooling, validating PR titles, or when a release didn't bump or the changelog came out blank because a commit wasn't conventional. Covers the type→semver mapping, breaking changes, scopes, monorepo scopes, and squash-merge PR titles."
 metadata:
   author: stealth-engine
-  version: "1.0.1"
+  version: "1.1.0"
 ---
 
 # Conventional Commits (a.k.a. semantic commit messages)
@@ -17,7 +17,7 @@ covers the tooling that consumes these messages.
 ## The format
 
 ```text
-<type>(<optional scope>)<optional !>: <description>
+<type>[(<scope>)][!]: <description>
 
 <optional body — the "why", wrapped>
 
@@ -29,7 +29,9 @@ covers the tooling that consumes these messages.
   parens for the area touched.
 - `!` before the colon **or** a `BREAKING CHANGE:` footer marks a breaking change
   (`BREAKING-CHANGE:` with a hyphen is an accepted synonym).
-- **description**: imperative mood, concise, lowercase, **no trailing period**.
+- **description**: concise; **by convention** imperative mood, lowercase, **no
+  trailing period** (Angular/commitlint style — the spec itself mandates none of
+  these).
 - Blank line before any body/footer.
 
 ```text
@@ -78,7 +80,7 @@ BREAKING CHANGE: `users.email` is now `users.email_address`; update queries.
 
 Optional, but meaningful: a noun naming the area (`fix(toggle): …`). **In a
 monorepo the scope is how releases/changelogs are routed per package** — repos
-often *require* it (e.g. `feat(piaf-web): …`, `feat(react-typed-form-kit): …`).
+often *require* it (e.g. `feat(web-app): …`, `feat(react-typed-form-kit): …`).
 Keep a scope vocabulary documented so it stays consistent.
 
 ## Squash merges: the PR title *is* the commit
@@ -89,6 +91,13 @@ Commit**, or the release/changelog step sees a non-conventional message and skip
 it. Put the individual semantic commits in the squash **body** for detail.
 [`git-trunk-branch-and-pr-automation`](../git-trunk-branch-and-pr-automation/SKILL.md)
 covers the CI that enforces this.
+
+> **Caveat:** the title only becomes the commit when the repo's squash setting is
+> **"Default to pull request title"**. With GitHub's out-of-the-box **"Default
+> message"**, a *single-commit* PR reuses that commit's message instead of the
+> title — so a non-conventional lone commit still skips the release even though the
+> PR title looks fine. Set the repo to default to the PR title, or keep the single
+> commit conventional too.
 
 - **Single-package repo:** the title's scope is optional.
 - **Monorepo:** scope the title to the package, and keep a PR to **one package**
@@ -121,8 +130,11 @@ covers the CI that enforces this.
   the generated changelog.
 - **Revert format:** a header `revert: <subject of the reverted commit>` plus a
   **body line** `This reverts commit <sha>.` — that body line is what the parser
-  keys on. `git revert` generates `Revert "<subject>"` + that line; lowercase it to
-  `revert:` so it's recognised. Reverts default to a **patch** release.
+  keys on. The semantic-release parser is case-insensitive and also matches git's
+  default `Revert "<subject>"` header, so an untouched `git revert` commit *is*
+  recognised — but **commitlint / PR-title validators reject `Revert` as a type**,
+  so lowercase the header to `revert:` to pass those. Reverts default to a **patch**
+  release.
 
 ## Verify
 

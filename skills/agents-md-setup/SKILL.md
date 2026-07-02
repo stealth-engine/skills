@@ -3,7 +3,7 @@ name: agents-md-setup
 description: Set up a project's agent instructions as a single source of truth — AGENTS.md as the real file, with CLAUDE.md (and optionally other agents' files) as symlinks to it. Use when starting/bootstrapping a repo, when asked to "add a CLAUDE.md / AGENTS.md", "set up project conventions / agent instructions", "make Claude use AGENTS.md", or when a repo has a standalone CLAUDE.md that should become cross-tool. Also use to fix duplicated/drifting CLAUDE.md + AGENTS.md, or to add per-workspace instructions in a monorepo (Turborepo / pnpm workspaces).
 metadata:
   author: stealth-engine
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # agents-md-setup
@@ -19,7 +19,11 @@ no duplication, no drift.
 - Claude Code reads `CLAUDE.md`. You **cannot** make the harness read `AGENTS.md`
   instead via a prompt or a skill — but a **symlink** `CLAUDE.md → AGENTS.md`
   means Claude opens `CLAUDE.md` and gets `AGENTS.md`'s content. That *is* the
-  mechanism; nothing else is needed.
+  mechanism; nothing else is needed. *(True as of 2026-07: native `AGENTS.md`
+  support is still an open request — [anthropics/claude-code#34235](https://github.com/anthropics/claude-code/issues/34235).
+  Re-verify against the [changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md)
+  before relying on it; if Claude Code gains native `AGENTS.md` support the
+  symlink becomes optional.)*
 - Result: edit `AGENTS.md` only; every agent stays in sync.
 
 ## Decision: what's already there?
@@ -33,7 +37,17 @@ no duplication, no drift.
 4. **Both exist as real files** → do NOT blindly overwrite. Compare them; merge
    into `AGENTS.md` (it wins as the canonical file), confirm with the user if the
    contents differ, then remove the standalone `CLAUDE.md`.
-5. **`CLAUDE.md` already a symlink → `AGENTS.md`** → already done; stop.
+5. **`CLAUDE.md` already a symlink → `AGENTS.md`** → already done; just confirm
+   the target exists (link isn't dangling), then stop.
+6. **`AGENTS.md` is a symlink → `CLAUDE.md`** (reversed) → flip it so `AGENTS.md`
+   is the real file. Do **not** `git mv` the symlink onto its own target (creates
+   a broken/self-referencing link):
+   ```bash
+   rm AGENTS.md                     # remove the symlink (the real content is in CLAUDE.md)
+   git mv CLAUDE.md AGENTS.md        # CLAUDE.md becomes the real AGENTS.md
+   ln -s AGENTS.md CLAUDE.md         # recreate CLAUDE.md as the symlink
+   git add AGENTS.md CLAUDE.md
+   ```
 
 ## Create the symlink
 
@@ -52,6 +66,15 @@ Optionally point other tools at the same file:
 
 ```bash
 ln -s AGENTS.md GEMINI.md
+```
+
+Most modern agents already read `AGENTS.md` (and often `CLAUDE.md`) natively —
+e.g. GitHub Copilot reads `AGENTS.md` directly (coding agent, VS Code, CLI) as of
+Aug 2025, so **no `copilot-instructions.md` symlink is needed** there. Only add a
+tool-specific symlink for **older surfaces that don't yet read `AGENTS.md`**:
+
+```bash
+# Only for legacy Copilot surfaces that predate native AGENTS.md support:
 mkdir -p .github && ln -s ../AGENTS.md .github/copilot-instructions.md
 ```
 
@@ -86,8 +109,10 @@ agent instructions in `AGENTS.md` — don't merge the two.
 
 ## Windows / CI caveat (important)
 
-Git symlinks need `core.symlinks=true` and can break on Windows checkouts or
-some CI runners (the symlink lands as a text file containing `AGENTS.md`). If the
+Git symlinks need `core.symlinks=true` (off by default on Windows Git) and, to
+**create** them on checkout, Windows also requires either Developer Mode enabled
+or an elevated/admin shell. Without those they break on Windows checkouts or some
+CI runners (the symlink lands as a text file containing `AGENTS.md`). If the
 project targets Windows, prefer the fallback: a tiny **real** `CLAUDE.md` whose
 entire content is a pointer —
 

@@ -3,7 +3,7 @@ name: nextjs-locale-monorepo
 description: Add locale-prefixed i18n routing across a Next.js monorepo (Turborepo / pnpm workspaces) by extracting the engine into a shared workspace package that every app consumes — locale detection + a middleware/proxy factory + a `use client` LocaleProvider/hooks, plus a shared supportedLanguages config. Each app redirects `/` and unprefixed paths to `/<locale>/…` from the toggle's last choice (the NEXT_LOCALE cookie) then the browser's Accept-Language, wiring only a thin middleware + `[locale]` layout. Use when several apps in one repo need consistent `/en-hk/…` `/zh-hk/…` routing, sharing locale logic via a workspace package instead of copy-paste, dual ESM/CJS build of a package that ships a client provider, Turbo build-ordering so the lib builds before the apps, or per-app locale wiring. For a single standalone site, use nextjs-locale-standalone instead.
 metadata:
   author: stealth-engine
-  version: "1.1.0"
+  version: "1.2.0"
 ---
 
 # Next.js locale routing — monorepo (shared package)
@@ -26,7 +26,10 @@ middleware is the single writer of the cookie, so the choice persists. The
 `NEXT_LOCALE` cookie defaults to **`httpOnly: true`** — it's read server-side
 (`request.cookies`) only, never from client JS, so keep it out of reach of
 injected scripts. Set `httpOnly: false` only if client JS genuinely must read it.
-Full explanation + a toggle template: see **nextjs-locale-standalone**.
+It also defaults to a **1-year `maxAge`** (`defaultCookieOptions` in
+`templates/package/src/config.ts`) so the toggle's choice survives a browser
+restart — without it the cookie is session-only and the "choice persists" promise
+breaks. Full explanation + a toggle template: see **nextjs-locale-standalone**.
 
 ## Architecture
 
@@ -100,6 +103,19 @@ Use the [`templates/package/`](./templates/package) files as-is. What matters:
    `LocaleProvider` from **`i18n-routing/client`** (not the root import). This is
    the root layout — render `<html lang={locale}>`/`<body>` here and keep no
    `app/layout.tsx` (every page lives under `[locale]`).
+4. **`components/LocaleToggle.tsx`** (`templates/LocaleToggle.tsx`): a
+   `'use client'` switcher that swaps the first path segment (or prepends one) and
+   `router.push`es — the middleware rewrites `NEXT_LOCALE` on that navigation, so
+   the choice sticks. It reads the current locale from `i18n-routing/client` and
+   the language list from `configs/locale`; it's a11y-wired (`aria-current`,
+   44×44 touch target, visible focus ring).
+5. **`configs/src/locale.ts`** (`templates/configs-locale.ts`): the shared
+   `supportedLanguages` source of truth every app + the middleware read from.
+
+The matcher's `.*\..*` excludes *any* path containing a dot from middleware (so
+unprefixed dot-bearing routes like `/blog/v1.2` never get locale-redirected),
+while `shouldSkipMiddleware` only skips a known-extension allowlist. If you have
+real dotted routes, narrow the matcher to known extensions instead of `.*\..*`.
 
 ## Turbo / pnpm specifics
 

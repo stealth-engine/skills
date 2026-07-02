@@ -3,7 +3,7 @@ name: multi-agent-codebase-audit
 description: "Audit an ENTIRE codebase with multiple agents in parallel — map the repo, partition it into review slices, fan out one (or more, multi-lens) reviewer subagent per slice, reduce with a cross-cutting/architecture critic + a completeness check, then triage, fix, and report with an honest coverage ledger. Use when asked to 'audit the whole codebase', 'full security/quality review of the repo', 'review the entire project', 'do a deep/comprehensive code audit', 'scan everything for bugs or vulnerabilities', when onboarding/inheriting an unfamiliar repo, or for a periodic deep sweep. Whole-repo scoped and scales agent count to repo size — NOT a diff review (for changed lines use dual-agent-review)."
 metadata:
   author: stealth-engine
-  version: "1.0.0"
+  version: "1.0.1"
 ---
 
 # Multi-agent codebase audit

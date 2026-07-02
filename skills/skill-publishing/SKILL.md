@@ -3,7 +3,7 @@ name: skill-publishing
 description: How to author and publish agent skills for the skills.sh / `npx skills` ecosystem — the SKILL.md format, why the frontmatter description is the trigger, multi-skill repo layout, the `skills` CLI (init/add/list/find/update/remove with flags), publishing to GitHub with SEO metadata, and public vs private repos (it git-clones, so private works with auth). Use when asked to "create/write/author a skill", "publish a skill", "set up a skills repo", "make a skill installable/discoverable", "use npx skills", or "can I use a private skills repo".
 metadata:
   author: stealth-engine
-  version: "1.0.1"
+  version: "1.1.0"
 ---
 
 # skill-publishing
@@ -94,6 +94,10 @@ SKILL.md                                # a single skill at repo root also works
 ```
 
 - **No manifest required** — the CLI auto-discovers those paths.
+- **Don't put a root `SKILL.md` alongside a `skills/` dir**: a root `SKILL.md`
+  **short-circuits discovery** — the CLI treats the repo as one skill and never
+  scans subdirectories unless consumers pass `--full-depth`. Use one layout or
+  the other.
 - `README.md` = the **human** index (a table of skills) + SEO. The machine index
   is just each skill's `description`; no separate index file.
 - `AGENTS.md` (+ `CLAUDE.md` symlink) = authoring conventions for the repo.
@@ -108,7 +112,7 @@ npx skills init skills/<name>        # scaffold a new skill folder + SKILL.md
 npx skills add owner/repo            # interactive: pick skills + agents
 npx skills add owner/repo --list     # browse the repo, install nothing
 npx skills add owner/repo --skill a b   # install specific skills
-npx skills add owner/repo --all -g   # everything, global (~/.claude/skills)
+npx skills add owner/repo --all -g   # everything, all agents, global — no prompts
 npx skills add owner/repo --copy     # copy instead of symlink into agent dirs
 
 npx skills list                      # installed skills (-g for global)
@@ -119,8 +123,13 @@ npx skills use owner/repo@skill      # one-off prompt without installing
 ```
 
 Flags that matter: `-s/--skill`, `-a/--agent` (`*` = all), `-g/--global`,
-`-l/--list`, `-y/--yes` (skip prompts), `--all`. Telemetry is on by default;
-`DISABLE_TELEMETRY=1` to opt out.
+`-l/--list`, `-y/--yes` (skip prompts), `--all`, `--full-depth` (scan every
+subdirectory even when a root `SKILL.md` exists — needed for a repo that has both
+a root skill and a `skills/` dir). Telemetry is on by default; set
+`DISABLE_TELEMETRY=1` (or `DO_NOT_TRACK=1`) to opt out.
+
+> Provenance: CLI commands, flags, and behaviour verified against `skills`
+> v1.5.13 (2026-07). The CLI iterates fast — re-check flags if it's since moved.
 
 ## Publishing to GitHub
 
@@ -139,8 +148,9 @@ both humans and `npx skills find` read.
 
 ## Public vs private
 
-`npx skills add` does a plain **`git clone`** under the hood (defaulting to the
-HTTPS URL), so:
+`npx skills add` **`git clone`s** the repo under the hood (defaulting to the
+HTTPS URL) — apart from a no-clone GitHub-API fast path reserved for a few
+allowlisted first-party owners (e.g. `vercel`), any other repo is cloned. So:
 
 - **Public** → clones with no auth.
 - **Private** → works too, **if the machine is authed to clone it**. For HTTPS,

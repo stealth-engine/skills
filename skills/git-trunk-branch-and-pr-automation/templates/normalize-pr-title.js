@@ -26,27 +26,41 @@ const BRANCH_TYPE = {
 
 const RANK = { feat: 2, fix: 1, perf: 1 }; // release-signalling types; others = 0 (no release)
 
-// Returns the strongest release-signalling type across the commits, plus whether
-// any commit is breaking (`!` or a `BREAKING CHANGE`/`BREAKING-CHANGE` footer) — so
-// the synthesised title can carry the `!` and not under-release after squash.
+// Returns the strongest release-signalling type across the commits, plus how each
+// commit signals a breaking change — tracked SEPARATELY because they behave
+// differently on squash:
+//   - bangBreaking (`type!:`): the `!` lives in the header and is LOST when commits
+//     collapse into the squash body, so the TITLE must carry it or the release
+//     under-bumps (minor/patch instead of major).
+//   - footerBreaking (`BREAKING CHANGE:`/`BREAKING-CHANGE:`): a body footer that
+//     SURVIVES in the concatenated squash body, so semantic-release still reads it —
+//     the title needs no `!`.
+// So a title `!` is only required when a break would otherwise be lost:
+// `bangBreaking && !footerBreaking`.
 function detectFromCommits(commits = []) {
-  if (!Array.isArray(commits)) return { type: null, scope: null, breaking: false };
+  if (!Array.isArray(commits)) {
+    return { type: null, scope: null, breaking: false, bangBreaking: false, footerBreaking: false };
+  }
   let best = null;
   let bestScope = null;
   let bestRank = -1;
-  let breaking = false;
+  let bangBreaking = false;
+  let footerBreaking = false;
   for (const c of commits) {
     const msg = c.commit?.message || c.message || '';
     const m = msg.match(/^(\w+)(?:\(([^)]+)\))?(!)?:/);
-    const isBreaking = (m && m[3] === '!') || /^BREAKING[ -]CHANGE:/m.test(msg);
-    if (isBreaking) breaking = true;
+    const isBang = !!(m && m[3] === '!');
+    const isFooter = /^BREAKING[ -]CHANGE:/m.test(msg);
+    if (isBang) bangBreaking = true;
+    if (isFooter) footerBreaking = true;
     if (m) {
       const t = m[1].toLowerCase();
       if (TYPES.includes(t)) {
-        // Rank breaking commits highest so type+scope+`!` all come from the SAME
-        // (strongest) commit — else a breaking `fix(api)!:` could mis-attribute the
-        // `!` to a higher-type-but-non-breaking `feat(ui):` scope.
-        const rank = (isBreaking ? 100 : 0) + (RANK[t] || 0);
+        // Rank BANG-breaking commits highest so an injected `!` + its scope come from
+        // the SAME commit — else a breaking `fix(api)!:` could mis-attribute the `!`
+        // to a higher-type-but-non-breaking `feat(ui):` scope. (A footer break needs
+        // no title `!`, so it doesn't drive this attribution.)
+        const rank = (isBang ? 100 : 0) + (RANK[t] || 0);
         if (rank > bestRank) {
           bestRank = rank;
           best = t;
@@ -55,7 +69,13 @@ function detectFromCommits(commits = []) {
       }
     }
   }
-  return { type: best, scope: bestScope, breaking };
+  return {
+    type: best,
+    scope: bestScope,
+    breaking: bangBreaking || footerBreaking,
+    bangBreaking,
+    footerBreaking,
+  };
 }
 
 function detectTypeFromBranch(branchName = '') {
@@ -119,11 +139,16 @@ function processPRTitle(currentTitle, commits = [], branchName = '') {
   const title = (currentTitle || '').trim();
   const det = detectFromCommits(commits);
 
-  // Inject the breaking `!` if commits signal a breaking change but the header
-  // doesn't already — else a `feat!:` commit under an `feat: …` title would
-  // under-release (minor instead of major) after squash.
+  // The break is LOST on squash only when a `type!:` commit exists AND no
+  // `BREAKING CHANGE:` footer survives in the body to carry it. A footer break
+  // needs no title `!` — so we mirror validatePRTitle exactly and leave an
+  // otherwise-valid title UNTOUCHED when the footer already covers the break.
+  const lostBreak = det.bangBreaking && !det.footerBreaking;
+
+  // Inject the breaking `!` only for that lost-break case — else a `feat!:` commit
+  // under a `feat: …` title would under-release (minor instead of major) after squash.
   const withBreaking = (header) => {
-    if (!det.breaking || /^[A-Za-z]+(\([^)]+\))?!:/.test(header)) return header;
+    if (!lostBreak || /^[A-Za-z]+(\([^)]+\))?!:/.test(header)) return header;
     return header.replace(/^([A-Za-z]+(?:\([^)]+\))?)\s*:/, '$1!:');
   };
 
@@ -144,7 +169,7 @@ function processPRTitle(currentTitle, commits = [], branchName = '') {
   // "word(scope)!: " first so we never double-prefix (e.g. "WIP: foo", "Update: x").
   const type = det.type || detectTypeFromBranch(branchName) || 'chore';
   const scope = det.scope ? `(${det.scope})` : ''; // keep package scope for monorepos
-  const bang = det.breaking ? '!' : ''; // preserve breaking signal → major bump
+  const bang = lostBreak ? '!' : ''; // carry the `!` only when a footer won't → major bump
   // Strip ONLY a leading real-type prefix (case-insensitive) so a mis-cased
   // "Feat: x" doesn't double-prefix, while a descriptive "Note: x" keeps its text.
   const stripped = title.replace(

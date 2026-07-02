@@ -53,9 +53,21 @@ function parseAcceptLanguage(header: string): string[] {
   return header
     .split(',')
     .map((part) => {
-      const [loc, q = '1'] = part.trim().split(';q=');
-      return { loc: loc.toLowerCase(), q: parseFloat(q) };
+      // Split off the locale, then find the q-param tolerating optional spaces
+      // (`en-US; q=0.8`). Missing q → 1. Only a well-formed 0–1 weight counts;
+      // malformed/out-of-range (`q=2`, `q=0.8junk`) → NaN so it's dropped below
+      // rather than silently outranking valid locales.
+      const [rawLoc, ...params] = part.trim().split(';');
+      const qParam = params
+        .map((p) => p.trim())
+        .find((p) => p.toLowerCase().startsWith('q='));
+      const qRaw = qParam === undefined ? '1' : qParam.slice(2).trim();
+      const q = /^\d+(\.\d+)?$/.test(qRaw) ? Number.parseFloat(qRaw) : Number.NaN;
+      return { loc: rawLoc.trim().toLowerCase(), q };
     })
+    // `q=0` rejects that locale; valid weights are 0–1. Keep only well-formed,
+    // in-range, positive qualities (drops `q=0`, NaN, and out-of-range like `q=2`).
+    .filter((x) => x.loc && x.q > 0 && x.q <= 1)
     .sort((a, b) => b.q - a.q)
     .map((x) => x.loc);
 }
