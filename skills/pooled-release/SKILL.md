@@ -3,7 +3,8 @@ name: pooled-release
 description: "Cut fewer, batched releases (a 'release train') instead of one per merge — by triggering semantic-release on demand or on a cadence rather than on every push to main. Use when releasing on every merge is too noisy, when you want one larger readable changelog per release, to add a manual 'cut a release' button (workflow_dispatch) or a scheduled/weekly release, to set up prerelease channels (next/beta → promote to stable), or when deciding whether you need a release branch."
 metadata:
   author: stealth-engine
-  version: "1.2.0"
+  co-author: wiiiimm
+  version: "1.2.1"
 ---
 
 # Pooled releases (release trains)
@@ -109,11 +110,9 @@ Start from `semantic-release-automation`'s `release.yml` and:
   dropdown (or `gh workflow run --ref <branch>`) means a manual run could analyze a
   feature/prerelease branch instead of `main`. The template guards this with a
   job-level `if: github.event_name == 'schedule' || github.ref_name == github.event.repository.default_branch`;
-  keep it. Note: `semantic-release-automation`'s `release.yml` also enables
-  `workflow_dispatch` but ships **without** this branch guard (its `on: push` guard
-  only covers pushes) — so a manual dispatch there can run off a non-default branch.
-  This skill's on-demand template adds the guard precisely because dispatch is the
-  primary trigger.
+  keep it. (`semantic-release-automation`'s push-triggered `release.yml` carries the
+  same guard on its `workflow_dispatch` path, so the two templates stay consistent —
+  a manual dispatch on either can only cut a release from the default branch.)
 - **Big gaps → big changelogs.** That's the point, but communicate the cadence so
   contributors know when their merged work actually ships.
 - **Pooling does NOT gate production deploys — wire that separately.** If a platform

@@ -3,6 +3,7 @@ name: conventional-commits
 description: "The Conventional Commits format — also called \"semantic commits\" / semantic commit messages — a `type(scope): description` header (`feat`, `fix`, …) plus an optional `BREAKING CHANGE` footer, and how it makes history machine-readable to drive automated version bumps and changelogs. Use when writing a commit message or PR title, deciding the type/scope/bump for a change, setting up or fixing a repo's commit convention, making commits parseable by semantic-release / changelog tooling, validating PR titles, or when a release didn't bump or the changelog came out blank because a commit wasn't conventional. Covers the type→semver mapping, breaking changes, scopes, monorepo scopes, and squash-merge PR titles."
 metadata:
   author: stealth-engine
+  co-author: wiiiimm
   version: "1.1.0"
 ---
 
@@ -165,6 +166,6 @@ Companion skills in this set:
   type → no release:
   <https://github.com/semantic-release/commit-analyzer/blob/master/lib/default-release-rules.js>
 - The type list and per-package scope rules also match conventions enforced in
-  production repos (`cphk`'s PR-title validator allows
-  `feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert`; `piaf-monorepo`
+  production repos (a production app's PR-title validator allows
+  `feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert`; a production monorepo
   requires per-package scopes).

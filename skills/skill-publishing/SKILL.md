@@ -3,6 +3,7 @@ name: skill-publishing
 description: How to author and publish agent skills for the skills.sh / `npx skills` ecosystem — the SKILL.md format, why the frontmatter description is the trigger, multi-skill repo layout, the `skills` CLI (init/add/list/find/update/remove with flags), publishing to GitHub with SEO metadata, and public vs private repos (it git-clones, so private works with auth). Use when asked to "create/write/author a skill", "publish a skill", "set up a skills repo", "make a skill installable/discoverable", "use npx skills", or "can I use a private skills repo".
 metadata:
   author: stealth-engine
+  co-author: wiiiimm
   version: "1.1.0"
 ---
 

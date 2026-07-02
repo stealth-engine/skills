@@ -3,6 +3,7 @@ name: meaningful-linear-issues
 description: "Create complete, analytics-ready Linear issues in ONE pass — resolve the right project (never guess it), and proactively fill the metadata that's technically optional but matters for planning/analytics: priority, estimate, labels (a Type + an Area from the team's existing taxonomy), milestone, assignee, cycle, and relations. Use when asked to 'create/file/open a Linear issue', 'log a ticket', 'add this to Linear', 'make an issue for X', or before any Linear `save_issue` that **creates** an issue or **backfills** missing metadata on a bare one — so the user doesn't have to come back and ask for the labels/estimate/project a second time, and so an issue doesn't land in the wrong project. NOT for routine field edits (status changes, reassignments) — those are also `save_issue` but don't need this."
 metadata:
   author: stealth-engine
+  co-author: wiiiimm
   version: "1.1.0"
 ---
 

@@ -3,6 +3,7 @@ name: nextjs-locale-monorepo
 description: Add locale-prefixed i18n routing across a Next.js monorepo (Turborepo / pnpm workspaces) by extracting the engine into a shared workspace package that every app consumes — locale detection + a middleware/proxy factory + a `use client` LocaleProvider/hooks, plus a shared supportedLanguages config. Each app redirects `/` and unprefixed paths to `/<locale>/…` from the toggle's last choice (the NEXT_LOCALE cookie) then the browser's Accept-Language, wiring only a thin middleware + `[locale]` layout. Use when several apps in one repo need consistent `/en-hk/…` `/zh-hk/…` routing, sharing locale logic via a workspace package instead of copy-paste, dual ESM/CJS build of a package that ships a client provider, Turbo build-ordering so the lib builds before the apps, or per-app locale wiring. For a single standalone site, use nextjs-locale-standalone instead.
 metadata:
   author: stealth-engine
+  co-author: wiiiimm
   version: "1.2.0"
 ---
 

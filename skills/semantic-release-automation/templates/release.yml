@@ -22,8 +22,10 @@ jobs:
   release:
     runs-on: ubuntu-latest
     # Don't loop: the release commit semantic-release pushes (chore(release): …)
-    # would otherwise re-trigger this workflow.
-    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    # would otherwise re-trigger this workflow. AND — since workflow_dispatch can be
+    # launched from ANY branch — only ever release from the default branch (a release
+    # cut from a feature branch would be wrong). Push events already only fire on main.
+    if: ${{ !startsWith(github.event.head_commit.message || '', 'chore(release):') && (github.event_name != 'workflow_dispatch' || github.ref_name == github.event.repository.default_branch) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7

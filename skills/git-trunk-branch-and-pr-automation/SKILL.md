@@ -3,6 +3,7 @@ name: git-trunk-branch-and-pr-automation
 description: "Trunk-based Git workflow with enforced branch naming and squash-merge PR titles. Use when setting up or standardising a branch/PR workflow, naming branches (feature/ fix/ hotfix/ and AI-agent prefixes claude/ cursor/ codex/ copilot/ codegen-bot/ dependabot/), configuring squash-only merges where the PR title becomes the commit and the body is the concatenated commits, making the PR title a valid Conventional Commit, adding GitHub Actions that validate branch names or auto-normalise PR titles, fixing a PR-title bot that loops, or deciding trunk vs release branches. Covers the GitHub repo settings, the validation/normalisation workflows, and how it feeds semantic-release."
 metadata:
   author: stealth-engine
+  co-author: wiiiimm
   version: "1.2.0"
 ---
 
@@ -129,7 +130,7 @@ the fork/bot validate path (it never edits there, so there's nothing to suppress
 
 ## Sources
 
-- Generalised from `cphk`'s `branch-name-check.yml` (the
+- Generalised from a production app's `branch-name-check.yml` (the
   `feature|fix|hotfix|codegen-bot|copilot|codex|cursor|claude|dependabot` prefix
   set) and `pr-title-manager.yml` + `normalize-pr-title.js` (title normalisation,
   the `skip-title-automation` label opt-out, bot-cascade guard, sticky comment).

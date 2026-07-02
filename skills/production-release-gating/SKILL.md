@@ -3,6 +3,7 @@ name: production-release-gating
 description: "Stop every push/merge to main from shipping to production — deploy only on a real release. Use when a merge to main unexpectedly deploys to prod, when you want production to deploy only on a semantic-release version (not every commit), when setting up preview-on-feature-branch but gated-prod-on-main, wiring a Vercel Ignored Build Step / `ignoreCommand`, promoting to a staging/`production` branch, or triggering a deploy from a published GitHub Release (GKE, self-hosted, dispatchable targets). Covers three named patterns — Release-Triggered Deploy (`on: release`, `types: [published]`), Promotion Branch (staging/`production`, most portable), and Build-Skip Gate (the Vercel `ignoreCommand` script) — when to use which, works with both per-merge and pooled releases, branch-aware previews, and monorepo dependency-release handling."
 metadata:
   author: stealth-engine
+  co-author: wiiiimm
   version: "1.4.0"
 ---
 
@@ -220,9 +221,9 @@ version bumps.
 
 ## Sources
 
-- Generalised from production repos: `cphk` (Release-Triggered Deploy — `on: release` /
+- Generalised from production repos: a production app (Release-Triggered Deploy — `on: release` /
   `types: [published]` dispatches a GKE deploy and annotates the Release with status)
-  and `piaf-monorepo`
+  and a production monorepo
   (Build-Skip Gate — per-app `vercel.json` `ignoreCommand` → `vercel-ignore-<app>.sh`
   with branch/release/dependency-aware exit codes).
 - Vercel Ignored Build Step: <https://vercel.com/docs/projects/overview#ignored-build-step>

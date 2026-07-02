@@ -3,6 +3,7 @@ name: dual-agent-review
 description: "Review a change set with two or more independent AI reviewers in parallel — a Sonnet subagent and the CodeRabbit CLI — then merge + dedupe their findings, triage valid vs invalid, fix (directly or via parallel fix-subagents), and hand back a report of what was fixed/how and what was ignored/why. Use when asked to 'review my changes with two/multiple agents', 'dual-agent / multi-reviewer review', 'get a second opinion from Sonnet and CodeRabbit', 'review the diff and fix the valid issues', 'run parallel reviewers and fix in parallel', or to cross-check one reviewer against another before committing. Diff-scoped by default (branch-vs-base or the PR diff), like CodeRabbit — NOT a whole-repo audit."
 metadata:
   author: stealth-engine
+  co-author: wiiiimm
   version: "1.1.0"
 ---
 

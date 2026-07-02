@@ -3,7 +3,8 @@ name: semantic-release-automation
 description: "Automate versioning, changelog, tags, GitHub Releases, and npm publishing from Conventional Commits with semantic-release. Use when setting up or debugging automated releases, wiring a `.releaserc` / `release` config and the plugin pipeline (commit-analyzer, release-notes-generator, changelog, npm, git, github), making `main` cut a version on merge, generating CHANGELOG.md, publishing to npm or creating a GitHub Release per release, doing per-package releases in a monorepo (per-package tags + paths-filter matrix), pooling commits into a less-frequent release, or fixing a release that didn't fire / a CI loop from the release commit. Covers the single-package and monorepo flavors and the GitHub Actions workflow."
 metadata:
   author: stealth-engine
-  version: "1.3.0"
+  co-author: wiiiimm
+  version: "1.3.1"
 ---
 
 # semantic-release automation
@@ -159,7 +160,9 @@ Use [`templates/release.yml`](./templates/release.yml). Non-negotiables:
   workflow. Guard with `if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}`
   (this template — the `${{ }}` wrapper is **required**; a bare leading `!` is invalid
   YAML) **or** put `[skip ci]` in the release commit message (the
-  monorepo template) if your CI honours it.
+  monorepo template) if your CI honours it. The template's guard also restricts the
+  `workflow_dispatch` (manual / pooled) path to the **default branch**, so a manual
+  run can't accidentally cut a release from a feature branch.
 - **Token:** the built-in `GITHUB_TOKEN` works for tags/Releases, but commits it
   makes **won't trigger other workflows**. If a release must kick off a downstream
   deploy via `on: push`/`on: release`, use a **PAT/bot `GH_TOKEN`**. (See
@@ -229,7 +232,7 @@ branch.
 
 - semantic-release docs & plugin pipeline: <https://semantic-release.gitbook.io/semantic-release/>
 - Default release rules (`angular` preset): <https://github.com/semantic-release/commit-analyzer/blob/master/lib/default-release-rules.js>
-- Patterns generalised from production repos: `gh-manager-cli` (single-package, npm
+- Patterns generalised from production repos: a published npm CLI (single-package, npm
   publish, `config in package.json`, no-loop `if` guard, `--repository-url` fix) and
-  `piaf-monorepo` (per-package `.releaserc` + `tagFormat`, `dorny/paths-filter`
+  a production monorepo (per-package `.releaserc` + `tagFormat`, `dorny/paths-filter`
   matrix, `@semantic-release/exec` prepare step, `[skip ci]` release commit).

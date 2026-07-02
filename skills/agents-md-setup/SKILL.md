@@ -3,6 +3,7 @@ name: agents-md-setup
 description: Set up a project's agent instructions as a single source of truth — AGENTS.md as the real file, with CLAUDE.md (and optionally other agents' files) as symlinks to it. Use when starting/bootstrapping a repo, when asked to "add a CLAUDE.md / AGENTS.md", "set up project conventions / agent instructions", "make Claude use AGENTS.md", or when a repo has a standalone CLAUDE.md that should become cross-tool. Also use to fix duplicated/drifting CLAUDE.md + AGENTS.md, or to add per-workspace instructions in a monorepo (Turborepo / pnpm workspaces).
 metadata:
   author: stealth-engine
+  co-author: wiiiimm
   version: "1.1.0"
 ---
 

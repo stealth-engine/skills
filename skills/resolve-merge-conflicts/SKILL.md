@@ -3,6 +3,7 @@ name: resolve-merge-conflicts
 description: "Resolve git merge/rebase conflicts non-destructively — preserving the intent of BOTH sides — and hand off to a human when a conflict can't be resolved safely. Use when a branch or PR has conflicts with its base ('this branch has conflicts that must be resolved', GitHub mergeable=CONFLICTING / mergeStateStatus=DIRTY), when a rebase / merge / cherry-pick / stash / revert stops with conflict markers (<<<<<<< ======= >>>>>>>), when a PR is behind base and needs updating, when syncing a long-lived branch or back-merging a hotfix, or when deciding rebase vs merge. Covers the safe-resolution rules (no blind -X ours/theirs, hunk-by-hunk with diff3, abort/reflog escape hatches, verify-after), the rebase ours/theirs inversion, lockfile/rename/semantic conflicts, and the escalate-when-stuck criteria."
 metadata:
   author: stealth-engine
+  co-author: wiiiimm
   version: "1.1.0"
 ---
 

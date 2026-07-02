@@ -3,6 +3,7 @@ name: nextjs-locale-standalone
 description: Add locale-prefixed i18n routing to a single (non-monorepo) Next.js App Router site — a middleware/proxy that redirects `/` and any unprefixed path to `/<locale>/…` using the locale toggle's last choice (the NEXT_LOCALE cookie) then the browser's Accept-Language, a `[locale]` layout with a LocaleProvider + hooks, and a LocaleToggle that persists the choice. Use when adding bilingual/multilingual routing to a standalone Next.js site, building `/en-hk/…` `/zh-hk/…` URL namespaces, redirecting the root to a default-or-remembered locale, persisting a language switch across visits, or detecting browser language in middleware. For a monorepo that shares this logic across several apps via a workspace package, use nextjs-locale-monorepo instead.
 metadata:
   author: stealth-engine
+  co-author: wiiiimm
   version: "1.1.0"
 ---
 
