@@ -1,8 +1,14 @@
 # Stealth Engine — Agent Skills
 
+> _I don't know what you're building. I don't know what bug you're chasing. But what
+> I **do** have is a very particular set of skills — skills acquired over a very long
+> career of shipping software. Skills that make me a nightmare for the bugs, the flaky
+> pipelines, and the merge conflicts that come for every codebase._
+
 A collection of **agent skills** we use daily in the studio — reusable, on-demand
 context and instructions for AI coding agents (Claude Code, Cursor, and other
-[skills.sh](https://www.skills.sh)-compatible agents).
+[skills.sh](https://www.skills.sh)-compatible agents). Give them to your agent and it
+acquires that set of skills too.
 
 Each skill is a folder under [`skills/`](./skills) containing a `SKILL.md`: YAML
 frontmatter (`name` + a trigger `description`) and a markdown body the agent loads
