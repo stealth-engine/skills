@@ -1,6 +1,6 @@
 ---
 name: safari26-liquid-glass
-description: How iOS 26 / iPadOS 26 Safari's "Liquid Glass" translucent status & address bars interact with web content, the viewport/keyboard facts behind them, and what to watch for when a design gets creative (immersive/edge-to-edge layouts, custom drawers/modals, gesture panning, themeable backgrounds, canvas). Use when an iPhone/iPad web page shows black/grey bars, content "cut off" at the bar edge, cropped shadows, a drawer/modal that breaks the layout, an inner scroll that won't scroll, the page jumping after the soft keyboard closes, or a canvas blur that won't render on iOS — or before building any full-screen/immersive iOS web UI.
+description: How iOS 26 / iPadOS 26 Safari's "Liquid Glass" translucent status & address bars interact with web content, the viewport/keyboard facts behind them, and what to watch for when a design gets creative (immersive/edge-to-edge layouts, custom drawers/modals, gesture panning, themeable backgrounds, canvas). Use when an iPhone/iPad web page shows black/grey bars, content "cut off" at the bar edge, cropped shadows, the top status bar turning opaque/tinted under a sticky or fixed header, a drawer/modal that breaks the layout, an inner scroll that won't scroll, the page jumping after the soft keyboard closes, or a canvas blur that won't render on iOS — or before building any full-screen/immersive iOS web UI.
 metadata:
   author: stealth-engine
   co-author: wiiiimm
@@ -92,16 +92,20 @@ The bleed/shadow rule above is about content clipping; whether the **top status 
 stays transparent** under a header pinned to the very top behaves differently — and
 here `fixed` is actually the *safe* choice:
 
-- `position: fixed; top: 0` — top status bar **stays transparent**. `fixed` does
+Offsets below are written as Tailwind classes (what was tested): `top-0` = `top: 0`,
+`top-1` = `top: 0.25rem`, `top-2` = `top: 0.5rem`. (Nonzero CSS lengths need a unit —
+`top: 1`/`top: 2` are invalid; use `0.25rem`/`0.5rem`.)
+
+- `position: fixed` at `top-0` — top status bar **stays transparent**. `fixed` does
   **not** kill it here.
-- `position: sticky; top: 0` — **kills** it (bar goes opaque). `sticky` + `top: 1`
-  still kills it; **`sticky` + `top: 2` restores** the transparent bar. A sticky top
-  header needs a small offset off the bar edge to keep it. (Offsets are Tailwind
-  `top-*`: `top-1` ≈ 0.25rem, `top-2` ≈ 0.5rem.)
+- `position: sticky` at `top-0` — **kills** it (bar goes opaque). `top-1` still kills
+  it; **`top-2` restores** the transparent bar — a sticky top header needs a small
+  offset off the bar edge to keep it.
 
 So "never `position:fixed`" is a *bleed/shadow* rule, not a top-tint one: for a
-top header specifically, `fixed; top:0` — or `sticky` with a ≥ `top-2` offset — keeps
-the bar transparent. Single-setup observation on iOS 26.x; re-verify on your build.
+top header specifically, `position: fixed` at the top — or a `sticky` header with a
+≥ `top-2` (`0.5rem`) offset — keeps the bar transparent. Single-setup observation on
+iOS 26.x; re-verify on your build.
 
 ### The keyboard bug (WebKit #297779)
 
