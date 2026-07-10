@@ -228,7 +228,7 @@ gate is a **rule of thumb, not an Apple constant** — the split is by window wi
 but the exact breakpoint isn't documented; **measure/treat it as approximate** and
 tune per layout rather than copying 760 verbatim.
 
-The §3 top-bar-tint thresholds (`fixed; top:0` keeps the top bar transparent; a
+The §2 top-bar-tint thresholds (`fixed; top:0` keeps the top bar transparent; a
 `sticky` top header needs a ≥ `top-2` offset) are a **single-setup on-device
 observation** — confirmed once, not yet corroborated by outside write-ups. Treat the
 exact `top` threshold as approximate and re-verify.
