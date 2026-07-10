@@ -1,10 +1,10 @@
 ---
 name: safari26-liquid-glass
-description: How iOS 26 / iPadOS 26 Safari's "Liquid Glass" translucent status & address bars interact with web content, the viewport/keyboard facts behind them, and what to watch for when a design gets creative (immersive/edge-to-edge layouts, custom drawers/modals, gesture panning, themeable backgrounds, canvas). Use when an iPhone/iPad web page shows black/grey bars, content "cut off" at the bar edge, cropped shadows, a drawer/modal that breaks the layout, an inner scroll that won't scroll, the page jumping after the soft keyboard closes, or a canvas blur that won't render on iOS — or before building any full-screen/immersive iOS web UI.
+description: How iOS 26 / iPadOS 26 Safari's "Liquid Glass" translucent status & address bars interact with web content, the viewport/keyboard facts behind them, and what to watch for when a design gets creative (immersive/edge-to-edge layouts, custom drawers/modals, gesture panning, themeable backgrounds, canvas). Use when an iPhone/iPad web page shows black/grey bars, content "cut off" at the bar edge, cropped shadows, the top status bar turning opaque/tinted under a sticky or fixed header, a drawer/modal that breaks the layout, an inner scroll that won't scroll, the page jumping after the soft keyboard closes, or a canvas blur that won't render on iOS — or before building any full-screen/immersive iOS web UI.
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "2.1.0"
+  version: "2.2.0"
 ---
 
 # Safari 26 "Liquid Glass" — facts, gotchas, and what to do
@@ -86,6 +86,26 @@ Treat **any** `position:fixed` as a bleed-breaker on this model and verify.
 (A "fixed full-screen backdrop" that *appears* to tint the bars is a trap — an
 in-flow background behind it is doing the tinting; the fixed layer adds nothing
 and crops its children.)
+
+**Field note — a top-pinned header and the *top-bar tint* is a separate axis.**
+The bleed/shadow rule above is about content clipping; whether the **top status bar
+stays transparent** under a header pinned to the very top behaves differently — and
+here `fixed` is actually the *safe* choice:
+
+Offsets below are written as Tailwind classes (what was tested): `top-0` = `top: 0`,
+`top-1` = `top: 0.25rem`, `top-2` = `top: 0.5rem`. (Nonzero CSS lengths need a unit —
+`top: 1`/`top: 2` are invalid; use `0.25rem`/`0.5rem`.)
+
+- `position: fixed` at `top-0` — top status bar **stays transparent**. `fixed` does
+  **not** kill it here.
+- `position: sticky` at `top-0` — **kills** it (bar goes opaque). `top-1` still kills
+  it; **`top-2` restores** the transparent bar — a sticky top header needs a small
+  offset off the bar edge to keep it.
+
+So "never `position:fixed`" is a *bleed/shadow* rule, not a top-tint one: for a
+top header specifically, `position: fixed` at the top — or a `sticky` header with a
+≥ `top-2` (`0.5rem`) offset — keeps the bar transparent. Single-setup observation on
+iOS 26.x; re-verify on your build.
 
 ### The keyboard bug (WebKit #297779)
 
@@ -207,6 +227,11 @@ then fall back to `body`" behavior match multiple independent Safari 26 write-up
 gate is a **rule of thumb, not an Apple constant** — the split is by window width,
 but the exact breakpoint isn't documented; **measure/treat it as approximate** and
 tune per layout rather than copying 760 verbatim.
+
+The §2 top-bar-tint thresholds (`fixed; top:0` keeps the top bar transparent; a
+`sticky` top header needs a ≥ `top-2` offset) are a **single-setup on-device
+observation** — confirmed once, not yet corroborated by outside write-ups. Treat the
+exact `top` threshold as approximate and re-verify.
 
 Everything here is as-of **iOS/iPadOS 26.x**; behavior is evolving across point
 releases (see the keyboard-bug status note in §2). **Re-verify on your target OS
