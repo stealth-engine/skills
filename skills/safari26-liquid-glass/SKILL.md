@@ -77,9 +77,13 @@ The derivation, in order:
   header { position: sticky; top: 0; background: #1a1a1a; } /* → status bar #1a1a1a */
   ```
 
-- **Want an immersive / transparent bar:** keep an opaque colour *off* the edge element
-  **and off `body`** (else Safari tints from `body`) — see §2's field note for the
-  fixed-vs-sticky / `top`-offset knobs.
+- **Want an immersive / transparent bar:** control this on the **edge (fixed/sticky)
+  element**, not by stripping `body`. Keep an opaque `background` *off the edge element*
+  and use §2's field-note knobs (a `fixed; top:0` header keeps the top bar glassy).
+  **Leave `body` painted** — §5/§2 need it for the overscroll rubber-band and the
+  load-flash guard, so don't remove it here; a painted `body` is only the *fallback*
+  tint, and the finicky edge-element behaviour (§2, WebKit #301756) is what actually
+  decides whether the bar goes transparent.
 
 Same-mechanism gotchas: a **fixed full-screen modal backdrop** (`inset: 0; background:
 rgba(0,0,0,.5)`) *can* get sampled and darken the whole bar — but fixed-element sampling
