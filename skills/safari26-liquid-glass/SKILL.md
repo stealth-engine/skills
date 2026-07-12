@@ -54,8 +54,9 @@ The derivation, in order:
    design** or you get flashes (a white `body` on a dark site flashes white on overscroll);
 3. else the system default.
 
-- **Sampled at first render** — a JS background change *after* paint does **not**
-  re-tint the bar.
+- **Derived from the CSS, not live from JS** — mutating a background via JS after paint
+  does **not** re-tint the bar (Safari re-derives on scroll/layout, not on a bare style
+  change).
 - **Solid vs translucent flips control:** a solid colour tints the bar to exactly that
   colour (yours); an **`rgba()`/semi-transparent** background makes Safari sample the
   *computed* colour showing through → unpredictable. Use opaque for control.
@@ -68,21 +69,24 @@ The derivation, in order:
 **The tint is a feature — decide your intent:**
 
 - **Want the bar tinted to match a header/brand (i.e. you do NOT want a transparent
-  status bar):** give a **`fixed`/`sticky` top element a solid `background-color`** (or
-  set `body`'s) — Safari paints the bar that colour.
+  status bar):** give a top element a solid `background-color` and let Safari sample it.
+  **`sticky` is the reliable trigger** — a bare `fixed` header's colour is sampled
+  inconsistently (see §2 and WebKit #301756); setting `body`'s background also works.
 
   ```css
-  header { position: fixed; top: 0; background: #1a1a1a; } /* → status bar #1a1a1a */
+  header { position: sticky; top: 0; background: #1a1a1a; } /* → status bar #1a1a1a */
   ```
 
-- **Want an immersive / transparent bar:** keep an opaque colour *off* the edge
-  element — see §2's field note for the fixed-vs-sticky / `top`-offset knobs.
+- **Want an immersive / transparent bar:** keep an opaque colour *off* the edge element
+  **and off `body`** (else Safari tints from `body`) — see §2's field note for the
+  fixed-vs-sticky / `top`-offset knobs.
 
 Same-mechanism gotchas: a **fixed full-screen modal backdrop** (`inset: 0; background:
-rgba(0,0,0,.5)`) gets sampled and darkens the whole bar (that's the "fixed backdrop is
-a trap" note in §2, explained); **two fixed elements** (header + footer) → Safari picks
-one, not reliably; and there is **no `theme-color` override — the CSS *is* the API**
-(WebKit #301756 tracks fixed-element tinting issues).
+rgba(0,0,0,.5)`) *can* get sampled and darken the whole bar — but fixed-element sampling
+is **unreliable** (see the §2 "fixed backdrop is a trap" note for the flip side, where
+the fixed layer is ignored instead); **two fixed elements** (header + footer) → Safari
+picks one, not reliably; and there is **no `theme-color` override — the CSS *is* the
+API** (WebKit #301756 tracks fixed-element tinting issues).
 
 ## 2. Facts we established (iOS/iPadOS 26, verified on-device)
 
@@ -127,9 +131,11 @@ A `position:fixed` element is clipped to the **visual** viewport, so:
 So the damage is **sometimes just the element (cropped shadow), sometimes the
 entire page (collapsed bleed) — depending on the element and where it sits.**
 Treat **any** `position:fixed` as a bleed-breaker on this model and verify.
-(A "fixed full-screen backdrop" that *appears* to tint the bars is a trap — an
-in-flow background behind it is doing the tinting; the fixed layer adds nothing
-and crops its children.)
+(A "fixed full-screen backdrop" is an **unreliable** tint source: in our build the
+in-flow background *behind* it did the tinting and the fixed layer added nothing — the
+flip side of the same finicky fixed-element sampling that *elsewhere* lets a fixed
+`rgba` backdrop darken the bar (§1). Either way it crops its children, so **don't use a
+fixed layer to control the bar tint** — use a `sticky` element or `body`.)
 
 **Field note — a top-pinned header and the *top-bar tint* is a separate axis.**
 The bleed/shadow rule above is about content clipping; whether the **top status bar
@@ -274,8 +280,9 @@ problem in §4 was reproduced and fixed on a real iPhone/iPad.
 
 §1's model claims are corroborated beyond that build: the `theme-color` drop and
 "bars reflect the page / sample a fixed-or-sticky edge element's `background-color`
-then fall back to `body`" behavior match multiple independent Safari 26 write-ups
-(Apple published no official web-dev docs for it). §1's **bar-tint derivation order**
+then fall back to `body`" behavior match independent Safari 26 reporting (Apple
+published no official web-dev docs for it; the specific derivation order below is the
+one write-up cited in References). §1's **bar-tint derivation order**
 (fixed/sticky edge → `body` → default; `html` ignored; sampled at render; overscroll
 rubber-band = `body`) follows Ben Nasedkin's write-up; the less-reliable fixed-element
 case is WebKit #301756. The **`innerWidth <= 760`**
