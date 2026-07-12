@@ -11,7 +11,7 @@
 | **Cursor Bugbot** | `cursor[bot]` | `BUGBOT_BUG_ID: <uuid>` | **auto-per-push** | **No (observed)** | — | Re-posts the *same* `BUGBOT_BUG_ID` against new line numbers every push, including long-fixed ones. Dedup by the id; don't tag it (no learning, no re-trigger needed). Ships "Fix in Cursor/Web" deep-links. Severity: Low/Medium/High. |
 | **Cursor Approval Agent** | `cursor[bot]` | — | n/a (human gate) | n/a | — | A **human-gate**: posts "requesting human review from <user>", stays `pending`/flips to pass. Exclude from the "settled" check so it never blocks the loop. |
 | **blocksorg** | `blocksorg[bot]` | none (use rule+file) | **auto-per-push (observed)** | **No (observed)** | — | "Severity N" findings; re-posts resolved ones across rounds. Caught a real fork-PR RCE once, so don't dismiss blindly — verify, then dedup. |
-| **Codex** | `chatgpt-codex-connector[bot]` | `P1`/`P2` badges | **on-open-only; on-demand via `@codex review`** (observed 2026-07: did **not** auto-re-review pushes; explicit `@codex review` triggered a fresh pass) | Unverified | `@codex` *(re-trigger observed 2026-07)* | Posts suggestions as a review with P-badged findings; **reacts 👍 when it has nothing** / is satisfied. Responds to `@codex review` / `@codex address`. Re-trigger it after each push you need its sign-off on — it won't come back on its own. Whether a teaching reply changes its future reviews is still unverified. |
+| **Codex** | `chatgpt-codex-connector[bot]` | `P1`/`P2` badges | **inconsistent / high-latency** (observed 2026-07: re-reviewed one push **unprompted** within minutes, yet on another PR had **not** re-posted ~8 min after an explicit `@codex review`) — assume neither a push nor a tag guarantees a *timely* re-review | Unverified | `@codex` *(re-trigger observed 2026-07)* | Posts suggestions as a review with P-badged findings; **reacts 👍 when it has nothing** / is satisfied. Responds to `@codex review` / `@codex address`. Re-trigger with `@codex review` when you need its sign-off and it hasn't re-posted — but its push/tag re-review timing is inconsistent, so don't chase it: record its findings and move on. Whether a teaching reply changes its future reviews is still unverified. |
 
 ## How to use this
 
@@ -24,9 +24,10 @@
     a genuine insight/correction to hand over (verified disproof, house rule it
     missed), so it records a learning. Not on every reject.
   - **Tag to re-trigger**: **on-demand** cadence rows — post `@handle review` after a
-    push when you still need that bot's pass on the new HEAD. For **on-open-only** rows,
-    only use a re-trigger command **explicitly documented for that bot** (e.g. Codex's
-    `@codex review`) — don't assume one exists. Never re-trigger-tag **auto-per-push**
+    push when you still need that bot's pass on the new HEAD. For rows whose cadence is
+    **on-open-only or inconsistent**, only use a re-trigger command **explicitly documented
+    for that bot** (e.g. Codex's `@codex review`) — don't assume one exists, and don't block
+    on it if it doesn't re-post. Never re-trigger-tag **auto-per-push**
     rows; they re-review themselves and the tag only spawns a redundant pass.
   - **Don't tag / stop tagging**: "learns = **No**" rows (noise), and — escalation
     guard — any bot that starts treating your replies as fresh work, adding noise each

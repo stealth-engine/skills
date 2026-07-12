@@ -234,11 +234,15 @@ on wall-clock:
 2. **No open finding remains untriaged on HEAD** — covering **both** sources: every
    **unresolved review thread** (query b) *and* every finding posted as a **top-level
    issue comment** (query c — these have no thread/resolve state, so track them by
-   stable id). Enumerate in full (no time/commit slice); each must be fixed,
-   rejected-with-reason, or confirmed stale by checking the file.
+   stable id). Enumerate in full (no time/commit slice); each must reach a **terminal
+   verdict** — fixed, rejected-with-reason, confirmed stale by checking the file, or
+   kept-with-reason. A **`Deferred`** finding is *not* terminal: it blocks hand-off
+   unless it's tracked in a follow-up issue/PR *and* the human has accepted the
+   deferral (see the status-table verdicts in `SKILL.md`).
 3. **All required checks green.**
 
 Non-deterministic LLM reviewers keep emitting marginal/duplicate comments, so "zero
 open findings" isn't always reachable — but every finding (thread **or** issue comment)
-must be *accounted for* (fixed/rejected/stale), never skipped because of when or which
-commit it sits on. Document rejected/stale items, then hand off.
+must be *accounted for* (fixed / rejected / stale / kept-with-reason, or an
+accepted-and-tracked `Deferred`), never skipped because of when or which commit it sits
+on. Document rejected/stale/kept items and any accepted deferral, then hand off.
