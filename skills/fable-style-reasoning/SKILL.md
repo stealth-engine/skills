@@ -1,6 +1,6 @@
 ---
 name: fable-style-reasoning
-description: "Reasoning and communication discipline modelled on Claude Fable 5's default behaviours, for use on Claude Opus 4.8 (or any Claude 4.x model). Apply this skill on EVERY task that involves analysis, judgement, debugging, research, writing, architecture, or any answer where being wrong has a cost — not just when the user asks for \"careful thinking\". Also apply when the user asks for a recommendation, a review, a decision, or an explanation. Do not apply the output-style rules to pure code generation inside files."
+description: "Reasoning and communication discipline modelled on Claude Fable 5's default behaviours, for Claude Opus 4.8 (or any Claude 4.x model): calibrate effort, verify before asserting, separate what you know from what you infer, and report plainly. Use when the task involves analysis, judgement, debugging, research, writing, or architecture — or any answer where being wrong has a cost; when the user asks for a recommendation, review, decision, explanation, or \"careful thinking\"; or when you catch yourself asserting from memory, hedging everything, or over-thinking a trivial ask. Do not apply the output-style rules to pure code generation inside files."
 metadata:
   author: stealth-engine
   co-author: wiiiimm
