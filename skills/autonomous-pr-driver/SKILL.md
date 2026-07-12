@@ -47,9 +47,11 @@ cadence + @-tag behaviour snapshot).
 4. **Converge?** Done — keyed on the **current HEAD SHA, never on the clock** — when
    **all three** hold:
    - **All required checks pass.**
-   - **Every expected reviewer has reported on the current HEAD** — and mind the
+   - **Every expected reviewer has reported on the current HEAD** — "expected" = the
+     **re-report-capable automated reviewers** (per-push, plus on-demand once
+     re-triggered), *not* one-shot or human reviewers (see the checklist). Mind the
      cadence: **on-demand** reviewers don't re-review a new commit until you
-     re-trigger them (see the checklist below).
+     re-trigger them.
    - **No open finding (thread or issue comment) remains valid on HEAD.** Stale
      re-posts and rejected/"wontfix" items don't block; **don't chase
      non-deterministic bots to zero comments** — they re-post regardless.
@@ -133,7 +135,11 @@ The tag decision falls out of the axes:
   (`@bot review` — see the @-mention policy above).
 - **Post a status table** as your triage/summary comment on the PR — one row per
   finding, so the human can audit the loop at a glance. **Verdict** is one of
-  `Fixed` / `Rejected` / `Deferred` / `Verified-stale` / `Kept (with reason)`:
+  `Fixed` / `Rejected` / `Deferred` / `Verified-stale` / `Kept (with reason)` —
+  `Fixed`/`Rejected`/`Verified-stale`/`Kept (with reason)` are **terminal and
+  non-blocking** (record the reason for `Kept`), while **`Deferred` blocks hand-off**
+  unless you note where it's tracked (a follow-up issue/PR) *and* flag it for the human
+  to accept in the summary:
 
   | Finding | Reviewer | Severity | Verdict | Note / commit |
   | --- | --- | --- | --- | --- |
@@ -162,7 +168,7 @@ The tag decision falls out of the axes:
 
 - [ ] All **required** checks green (ignore neutral/skipped + human-gated approvers).
 - [ ] **Every expected automated reviewer has weighed in on the current HEAD SHA** — cadence-aware: **per-push** reviewers re-review automatically (their check completed on HEAD and/or a review/inline/issue comment on HEAD); **on-demand** reviewers must be **explicitly re-triggered** (`@bot review`) if you need their pass on the new HEAD — don't silently exclude them, and don't hand off until a needed on-demand reviewer has actually re-reported on HEAD (or you've decided its sign-off isn't required and said so in the summary). Don't block on one-shot or human reviewers who won't re-post each push (their findings are covered by the next item).
-- [ ] **Every open finding triaged** — both unresolved review threads *and* top-level issue-comment findings, enumerated in full (not time/`commit_id`-filtered), each fixed / rejected / verified-stale-in-file.
+- [ ] **Every open finding triaged** — both unresolved review threads *and* top-level issue-comment findings, enumerated in full (not time/`commit_id`-filtered), each reaching a **terminal verdict** (fixed / rejected / verified-stale-in-file / kept-with-reason). A **`Deferred`** finding blocks hand-off unless it's tracked in a follow-up *and* the human has accepted the deferral.
 - [ ] Rejections each have a one-line reason comment.
 - [ ] Posted the final **status table** (one row per finding — verdict + note, per
       "Fixing & pushing") and **pinged the human to merge** (or auto-merged only if

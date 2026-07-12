@@ -182,9 +182,11 @@ semantic-release's release rules, so lenient would silently under-release.
 ```bash
 # A standalone PR comment (rejections, status summaries, @-mention nudges).
 gh pr comment $PR --repo $REPO --body "$(cat <<'EOF'
-Rejecting <finding>: <one-line reason>. @coderabbitai — resolved on HEAD, please re-scan.
+Rejecting <finding>: <one-line reason>.
 EOF
 )"
+# Append "@coderabbitai — resolved on HEAD, please re-scan" to the body ONLY to teach a
+# learner with a genuine insight (two-axes rule below) — not on every reject.
 ```
 
 - Tag per the two-axes decision in `SKILL.md` (values in
@@ -224,7 +226,7 @@ on wall-clock:
    drop them from the set (if you decide a bot's sign-off isn't required, say so in
    the summary). It is **not** every login that ever commented. The reliable per-bot
    signal is its **check completing on HEAD** (the settle-poll already waits for that)
-   and/or a review, inline comment, **or** issue comment on HEAD. **Do not block
+   and/or a review or inline comment attached to HEAD. A top-level **issue comment counts only when it explicitly names the current HEAD SHA** (issue comments aren't commit-attached — a stale one must not satisfy this gate); otherwise treat it as a finding input, not reviewer-completion evidence. **Do not block
    handoff on one-shot or human reviewers** who won't re-post on each push — their
    input is captured as open findings in gate 2, which you address regardless. A green
    check alone can precede the comments, so it's never sufficient on its own — pair it
