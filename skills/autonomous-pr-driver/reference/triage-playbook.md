@@ -234,7 +234,8 @@ on wall-clock:
 2. **No open finding remains untriaged on HEAD** — covering **both** sources: every
    **unresolved review thread** (query b) *and* every finding posted as a **top-level
    issue comment** (query c — these have no thread/resolve state, so track them by
-   stable id). Enumerate in full (no time/commit slice); each must reach a **terminal
+   stable id **when available, else by rule+file identity** — see `known-bots.md`).
+   Enumerate in full (no time/commit slice); each must reach a **terminal
    verdict** — fixed, rejected-with-reason, confirmed stale by checking the file, or
    kept-with-reason. A **`Deferred`** finding is *not* terminal: it blocks hand-off
    unless it's tracked in a follow-up issue/PR *and* the human has accepted the
