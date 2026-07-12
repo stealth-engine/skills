@@ -50,7 +50,8 @@ The derivation, in order:
    the "obscured content inset" (where the bar overlaps content), so Safari extends its
    colour into the bar for continuity;
 2. else the **`body`** `background-color` — `html`'s is **ignored**, and this same
-   `body` colour is what the overscroll "rubber-band" shows (they move together);
+   `body` colour is what the overscroll "rubber-band" shows, so **match `body` to your
+   design** or you get flashes (a white `body` on a dark site flashes white on overscroll);
 3. else the system default.
 
 - **Sampled at first render** — a JS background change *after* paint does **not**
@@ -60,6 +61,9 @@ The derivation, in order:
   *computed* colour showing through → unpredictable. Use opaque for control.
 - **Users can disable tinting** (iOS: Settings ▸ Apps ▸ Safari ▸ Tabs ▸ "Allow Website
   Tinting") → the bar reverts to system default, so your design must still read then.
+- **The blur is softer on iPhone than macOS** — more of the page shows through the bar,
+  so a colour mismatch between your sampled edge element and the content behind it is
+  more visible/jarring here. Getting the sampled colour right matters most on iPhone.
 
 **The tint is a feature — decide your intent:**
 
