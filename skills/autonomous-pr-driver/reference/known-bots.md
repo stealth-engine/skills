@@ -61,7 +61,10 @@ just adds noise.
 **Using this in the loop:**
 
 - **Re-trigger** an on-demand reviewer only per the two-axes rule above (you need its
-  sign-off on a new HEAD) — e.g. `@codex review`, `@greptileai`, or `@coderabbitai review`.
+  sign-off on a new HEAD) — e.g. `@codex review`, or `@greptileai` (its per-push
+  re-review is off by default). **Not** an auto-per-push reviewer like `@coderabbitai`,
+  which re-reviews every push itself — a manual `@coderabbitai review` just spends
+  another review allowance on the same SHA.
 - **Quiet a looping bot** (same findings every round, or noise burying the real ones):
   prefer the **documented pause/quiet** over silent ignoring — `@coderabbitai pause` is
   the only *comment* pause; for the others, flip the dashboard/config toggle (or
