@@ -126,7 +126,10 @@ The tag decision falls out of the axes:
   tag that would only spawn a redundant or no-op review. **Escalation guard:** if a
   bot you've engaged keeps treating your replies as new work — more noise each
   round — stop tagging it entirely; engaging it is net-negative. Just record its
-  findings as resolved/stale and move on.
+  findings as resolved/stale and move on. If the bot is **documented** to support it,
+  **pause / quiet it** (per [`known-bots.md`](./reference/known-bots.md)'s command
+  reference) rather than just absorbing the noise — but note most reviewers have **no
+  comment-level pause** (it's a dashboard/settings toggle), so don't invent one.
 
 ## Fixing & pushing — batch the round, push once
 
