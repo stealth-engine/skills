@@ -224,10 +224,13 @@ allowance/quota** per trigger. Keep triggers few and each one meaningful:
   free (squash-merge collapses it anyway); it's the **push** that triggers the
   re-review, so batch fixes behind a single push rather than pushing per finding.
 - **Don't double-run a reviewer's surfaces.** If a reviewer has both a CLI and a hosted
-  bot, run **one per commit**. Two on the same commit produce overlapping/near-duplicate
-  findings, double the consumption, and leave two surfaces to reconcile. A useful split:
-  the CLI locally *before* the push (catch the obvious, fix, then push a clean batch)
-  **or** the hosted bot *on* the push — never both on the same SHA.
+  bot, don't let both review the **same pushed SHA** — two on one commit produce
+  overlapping/near-duplicate findings, double the consumption, and leave two surfaces to
+  reconcile. The guard is cadence-dependent: if the hosted bot **auto-reviews every
+  push** it will review the pushed SHA anyway, so let it be the one surface and **skip
+  the CLI** on that commit; only reach for a **CLI-before-push** pass when the hosted bot
+  **won't** also review that SHA (it's paused, on-demand, or not installed) — then the
+  CLI is your one surface and you push an already-clean batch.
 - **Consolidate replies.** One status-table/summary comment per round instead of a reply
   per thread — each individual reply can make a *learner* re-acknowledge and re-analyse
   (extra churn, and for incremental reviewers, extra triggers). @-mention once, only to
