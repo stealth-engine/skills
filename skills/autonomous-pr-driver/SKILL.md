@@ -4,7 +4,7 @@ description: "Autonomously drive a pull request to merge-ready — opening or at
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "1.3.0"
+  version: "1.4.0"
 ---
 
 # Autonomous PR driver
@@ -24,7 +24,7 @@ cadence + @-tag behaviour snapshot).
 ```text
 1. OPEN/ATTACH → 2. WATCH checks → 3. RESOLVE reviews → 4. CONVERGE? ──no──┐
                                          ▲                                  │
-                                         └──────── push fixes ◀─────────────┘
+                                         └──────── push batch ◀─────────────┘
                                                                   yes → 5. HAND OFF
 ```
 
@@ -41,8 +41,9 @@ cadence + @-tag behaviour snapshot).
    - *Not* a timestamp/poll-window or `commit_id == HEAD` slice: both drop still-open
      findings anchored to an earlier commit or posted just before your window (see the
      playbook).
-   - **Triage each** (below): **fix the valid ones** (commit + push), **reject the
-     invalid ones with a comment**.
+   - **Triage each** (below): **fix the valid ones**, **reject the invalid ones with a
+     comment** — then **push the whole round as one batch** (see "Fixing & pushing":
+     batching minimises review re-triggers and duplicate re-posts).
    - Then go back to step 2 on the new commit.
 4. **Converge?** Done — keyed on the **current HEAD SHA, never on the clock** — when
    **all three** hold:
@@ -125,14 +126,34 @@ The tag decision falls out of the axes:
   round — stop tagging it entirely; engaging it is net-negative. Just record its
   findings as resolved/stale and move on.
 
-## Fixing & pushing
+## Fixing & pushing — batch the round, push once
 
-- One focused fix per finding (or per cluster); commit with a Conventional Commit
-  message; push to the PR branch to trigger re-review.
-- After pushing, **return to step 2** (watch the *new* commit's checks) — don't
-  triage the old round's comments against the new code. Per-push reviewers re-review
-  on their own; **re-trigger any on-demand reviewer** whose sign-off you still need
-  (`@bot review` — see the @-mention policy above).
+Every push, manual-review request, and eligible local-CLI run can **trigger a fresh
+review**. An incremental/per-push reviewer re-runs on **each** trigger and tends to
+**re-present the same consolidated finding set** as if new — a repeated "N findings"
+that's the *same* N, not N more. So a rapid *per-finding* commit stream both (a) buries
+which findings are genuinely new under repeated re-posts, and (b) can spend a separate
+**review allowance/quota** on every trigger. Treat review triggers as a budgeted
+resource:
+
+- **Fix the whole round as one batch, then push once.** Triage *all* of a review's
+  findings first — fix every valid one, decide the rejects/stale — committing locally
+  as you go (a focused commit per finding/cluster is fine). Then **push the batch as a
+  single update** so it draws **exactly one** re-review. Don't push after each
+  individual fix: a half-triaged push reopens the review cycle before you've addressed
+  the rest.
+- **One reviewer *surface* per iteration.** If a reviewer offers both a local **CLI**
+  and a hosted **bot**, run only **one** of them against a given commit. Both on the
+  same iteration duplicate the analysis (overlapping, sometimes conflicting findings),
+  double the consumption, and leave two surfaces to reconcile. Pick one — e.g. a local
+  CLI pass *before* pushing, **or** the hosted bot *on* the push — not both.
+- **Consolidate replies into one comment.** Post a single status-table/summary comment
+  per round (below) rather than a reply on every thread. Thread-by-thread chatter makes
+  a *learner* re-acknowledge and re-analyse each reply (churn, and for incremental
+  reviewers, more triggers); @-mention once, per the two-axes policy.
+- **After the batched push, return to step 2** (watch the *new* commit's checks) — don't
+  triage the old round against the new code. Per-push reviewers re-review on their own;
+  **re-trigger an on-demand reviewer** only if you still need its sign-off (`@bot review`).
 - **Post a status table** as your triage/summary comment on the PR — one row per
   finding, so the human can audit the loop at a glance. **Verdict** is one of
   `Fixed` / `Rejected` / `Deferred` / `Verified-stale` / `Kept (with reason)` —
@@ -153,6 +174,10 @@ The tag decision falls out of the axes:
   complete table. It replaces any terse "fixed N / rejected M" tally — same purpose,
   auditable per finding.
 
+The ideal shape of a whole PR is: initial review → **one** batched fix push → **one**
+final re-review → hand off. Materially more review round-trips than that usually means
+fixes went out before the round was fully triaged.
+
 ## Safety (non-negotiable)
 
 - **Fork / untrusted PRs:** the checkout is attacker-controlled and the token is
@@ -170,6 +195,9 @@ The tag decision falls out of the axes:
 - [ ] **Every expected automated reviewer has weighed in on the current HEAD SHA** — cadence-aware: **per-push** reviewers re-review automatically (their check completed on HEAD and/or a review/inline/issue comment on HEAD); **on-demand** reviewers must be **explicitly re-triggered** (`@bot review`) if you need their pass on the new HEAD — don't silently exclude them, and don't hand off until a needed on-demand reviewer has actually re-reported on HEAD (or you've decided its sign-off isn't required and said so in the summary). Don't block on one-shot or human reviewers who won't re-post each push (their findings are covered by the next item).
 - [ ] **Every open finding triaged** — both unresolved review threads *and* top-level issue-comment findings, enumerated in full (not time/`commit_id`-filtered), each reaching a **terminal verdict** (fixed / rejected / verified-stale-in-file / kept-with-reason). A **`Deferred`** finding blocks hand-off unless it's tracked in a follow-up *and* the human has accepted the deferral.
 - [ ] Rejections each have a one-line reason comment.
+- [ ] **Fixes pushed in batched rounds, not per-finding** — each push carried a fully
+      triaged round (one reviewer surface per iteration), minimising review re-triggers /
+      allowance spend and duplicate re-posts.
 - [ ] Posted the final **status table** (one row per finding — verdict + note, per
       "Fixing & pushing") and **pinged the human to merge** (or auto-merged only if
       explicitly authorised).
