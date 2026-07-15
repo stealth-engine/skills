@@ -212,6 +212,36 @@ EOF
   relevant when a deploy/check only fires on a bot action. *(Exception:
   `workflow_dispatch` / `repository_dispatch` can still be fired with `GITHUB_TOKEN`.)*
 
+## Minimise review triggers — batch the round
+
+Incremental/per-push reviewers re-run on **every** trigger (push, manual-review
+request, eligible CLI run) and re-emit the **same consolidated set** each time — so a
+per-finding commit stream reads as a repeated "N findings" and can spend a **review
+allowance/quota** per trigger. Keep triggers few and each one meaningful:
+
+- **One batched push per review round.** Settle → enumerate → triage the *whole* round
+  (fix all valid, decide rejects/stale) → push **once**. Local commit granularity is
+  free (squash-merge collapses it anyway); it's the **push** that triggers the
+  re-review, so batch fixes behind a single push rather than pushing per finding.
+- **Don't double-run a reviewer's surfaces.** If a reviewer has both a CLI and a hosted
+  bot, don't let both review the **same pushed SHA** — two on one commit produce
+  overlapping/near-duplicate findings, double the consumption, and leave two surfaces to
+  reconcile. The guard is cadence-dependent: if the hosted bot **auto-reviews every
+  push** it will review the pushed SHA anyway, so let it be the one surface and **skip
+  the CLI** on that commit; only reach for a **CLI-before-push** pass when the hosted bot
+  **won't** also review that SHA (it's paused, on-demand, or not installed) — then the
+  CLI is your one surface and you push an already-clean batch.
+- **Consolidate replies.** One status-table/summary comment per round instead of a reply
+  per thread — each individual reply can make a *learner* re-acknowledge and re-analyse
+  (extra churn, and for incremental reviewers, extra triggers). @-mention once, only to
+  teach or to re-trigger (per the two-axes rule).
+- **Watch for phantom "new" findings.** A repeated identical count across pushes is
+  usually the same set re-presented, not fresh defects — dedup by stable id (above)
+  before treating a re-post as new work. Real convergence is *fewer open threads*, not
+  a quieter summary line.
+
+Target shape: initial review → one batched fix push → one final re-review → hand off.
+
 ## Convergence — the honest definition
 
 Hand off only when **all three** hold, all keyed on the **current HEAD SHA**, never
