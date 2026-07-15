@@ -41,12 +41,13 @@ cadence + @-tag behaviour snapshot).
    - *Not* a timestamp/poll-window or `commit_id == HEAD` slice: both drop still-open
      findings anchored to an earlier commit or posted just before your window (see the
      playbook).
-   - **Triage each** (below): **fix the valid ones** and **decide the rejects/stale** —
-     then **push the whole round as one batch**, and only *after* the push **post one
-     consolidated status/rejection comment against the new HEAD** (see "Fixing &
-     pushing"). Posting a review-triggering reply *before* the push reviews the old
-     HEAD and makes the push a second pass — the churn this avoids.
-   - Then go back to step 2 on the new commit.
+   - **Triage each** (below): **fix the valid ones** and **decide the rejects/stale**,
+     then **push any fixes as one batch** and **post one consolidated status/rejection
+     comment** — *after* the push, against the new HEAD (see "Fixing & pushing"). An
+     **all-reject/stale round has nothing to push**: skip the push and post the verdicts
+     on the current HEAD. Posting a review-triggering reply *before* a push reviews the
+     old HEAD and makes the push a second pass — the churn this avoids.
+   - Then go back to step 2 (on the new commit, if you pushed).
 4. **Converge?** Done — keyed on the **current HEAD SHA, never on the clock** — when
    **all three** hold:
    - **All required checks pass.**
@@ -146,7 +147,8 @@ resource:
   as you go (a focused commit per finding/cluster is fine). Then **push the batch as a
   single update** so it draws **exactly one** re-review. Don't push after each
   individual fix: a half-triaged push reopens the review cycle before you've addressed
-  the rest.
+  the rest. (An **all-reject/stale round has no code to push** — skip the push and just
+  post the consolidated verdicts on the current HEAD.)
 - **One reviewer *surface* per iteration.** If a reviewer offers both a local **CLI**
   and a hosted **bot**, don't let **both** review the **same pushed SHA** — that
   duplicates the analysis (overlapping/conflicting findings), doubles the consumption,
