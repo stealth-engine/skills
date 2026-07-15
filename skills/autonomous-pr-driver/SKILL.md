@@ -41,9 +41,11 @@ cadence + @-tag behaviour snapshot).
    - *Not* a timestamp/poll-window or `commit_id == HEAD` slice: both drop still-open
      findings anchored to an earlier commit or posted just before your window (see the
      playbook).
-   - **Triage each** (below): **fix the valid ones**, **reject the invalid ones with a
-     comment** — then **push the whole round as one batch** (see "Fixing & pushing":
-     batching minimises review re-triggers and duplicate re-posts).
+   - **Triage each** (below): **fix the valid ones** and **decide the rejects/stale** —
+     then **push the whole round as one batch**, and only *after* the push **post one
+     consolidated status/rejection comment against the new HEAD** (see "Fixing &
+     pushing"). Posting a review-triggering reply *before* the push reviews the old
+     HEAD and makes the push a second pass — the churn this avoids.
    - Then go back to step 2 on the new commit.
 4. **Converge?** Done — keyed on the **current HEAD SHA, never on the clock** — when
    **all three** hold:
@@ -143,10 +145,13 @@ resource:
   individual fix: a half-triaged push reopens the review cycle before you've addressed
   the rest.
 - **One reviewer *surface* per iteration.** If a reviewer offers both a local **CLI**
-  and a hosted **bot**, run only **one** of them against a given commit. Both on the
-  same iteration duplicate the analysis (overlapping, sometimes conflicting findings),
-  double the consumption, and leave two surfaces to reconcile. Pick one — e.g. a local
-  CLI pass *before* pushing, **or** the hosted bot *on* the push — not both.
+  and a hosted **bot**, don't let **both** review the **same pushed SHA** — that
+  duplicates the analysis (overlapping/conflicting findings), doubles the consumption,
+  and leaves two surfaces to reconcile. Which surface is "the one" depends on the hosted
+  bot's cadence: if it **auto-reviews every push**, let *that* be your single surface and
+  **skip the CLI** on that commit; only reach for a **CLI-before-push** pass when the
+  hosted bot **won't** also review the pushed SHA (it's on-demand, paused, or not
+  installed) — then the CLI is your one surface and you push an already-clean batch.
 - **Consolidate replies into one comment.** Post a single status-table/summary comment
   per round (below) rather than a reply on every thread. Thread-by-thread chatter makes
   a *learner* re-acknowledge and re-analyse each reply (churn, and for incremental
