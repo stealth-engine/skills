@@ -94,26 +94,51 @@ function bypassTokens(): BypassTokens {
 // e.g. PREVIEW_GATE_UNPROTECTED_HOSTS="demo.acme.com, staging.acme.com".
 // Matching is exact, case-insensitive, port-stripped — never suffix/substring:
 // a suffix match on "acme.com" would unprotect every subdomain at once.
+// Bare DNS names only: an entry that isn't one is ignored with a warning rather
+// than half-parsed (pasting "https://demo.acme.com/" would otherwise silently
+// leave the domain gated, and an IPv6 literal would silently widen the list).
+const HOSTNAME_PATTERN =
+  /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/;
+
 function unprotectedHosts(): string[] {
   const raw = process.env.PREVIEW_GATE_UNPROTECTED_HOSTS?.trim();
   if (!raw) return [];
-  return raw
-    .split(",")
-    .map((h) => normalizeHost(h))
-    .filter((h) => h.length > 0);
+  const hosts: string[] = [];
+  for (const entry of raw.split(",")) {
+    if (entry.trim().length === 0) continue;
+    const host = normalizeHost(entry);
+    if (!HOSTNAME_PATTERN.test(host)) {
+      console.warn(
+        `[preview-gate] PREVIEW_GATE_UNPROTECTED_HOSTS: ignoring ${JSON.stringify(entry.trim())} — expected a bare hostname like "demo.acme.com" (no scheme, path, or IP literal). That domain stays GATED.`,
+      );
+      continue;
+    }
+    hosts.push(host);
+  }
+  return hosts;
 }
 
 function normalizeHost(value: string): string {
-  // Strip a :port and lowercase. Host headers are case-insensitive, and a
-  // preview host can arrive as "example.com:443".
-  return value.trim().toLowerCase().split(":")[0] ?? "";
+  const host = value.trim().toLowerCase();
+  // Strip a trailing :port without splitting IPv6 literals apart (a bare
+  // split(":") would turn "[2001:db8::1]" into "[2001" and, with a prefix
+  // match, silently unprotect every address sharing that hextet).
+  const withoutPort = /^(\[[^\]]*\]|[^:]*)(?::\d+)?$/.exec(host)?.[1] ?? host;
+  // "acme.com." is a valid absolute FQDN and is DNS-equal to "acme.com".
+  return withoutPort.endsWith(".") ? withoutPort.slice(0, -1) : withoutPort;
 }
 
 function isUnprotectedHost(request: Request): boolean {
   const allowlist = unprotectedHosts();
   if (allowlist.length === 0) return false;
-  // Trust the Host header only as far as Vercel does: it's the routed host, and
-  // an attacker who could forge it could equally request the real host anyway.
+  // SCOPE: this is safe ON VERCEL because Vercel's edge selects the deployment
+  // from this same Host value, so the header cannot be desynced from the
+  // deployment it routed to — forging it just routes you to the public host you
+  // claimed. That is a property of Vercel's routing, NOT of the attacker's
+  // capability. Off Vercel (self-hosted, or any proxy that routes on the
+  // absolute-form target or TLS SNI while forwarding the client's Host
+  // verbatim), Host is attacker-controlled and this check is a straight auth
+  // bypass — do not use this env var there.
   const host = normalizeHost(request.headers.get("host") ?? "");
   if (!host) return false;
   return allowlist.includes(host);
