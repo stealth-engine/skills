@@ -1,21 +1,60 @@
 ---
 name: vercel-preview-password-gate
-description: Password-protect Vercel PREVIEW deployments for free with a self-contained middleware gate — works for ANY framework on Vercel (Next.js proxy/middleware, or SvelteKit/Nuxt/Astro/Remix/static sites via framework-agnostic Routing Middleware). Unlock once via a signed cookie, only a scrypt hash stored in env, named automation bypass tokens (mimics Vercel's Protection Bypass for Automation), zero middleware cost in production (the build strips the gate from prod builds entirely). Use when asked to password-protect or basic-auth a preview/staging URL, gate previews without paying for Vercel's Advanced Deployment Protection (Deployment Protection add-on), add a login that "shows once and stays unlocked", set or ROTATE the preview password, add/remove bypass tokens for CI or third-party automation (Lighthouse, uptime checks), protect previews on an app with NO existing middleware, gate a production or pre-launch site with a shared password (coming-soon page, client demo, private internal tool — see "Gating production too"), or decide between a DIY gate and Vercel Authentication (free team SSO).
+description: A free DIY reimplementation of Vercel's $150/mo Advanced Deployment Protection add-on (Enterprise-only otherwise, unbuyable on Hobby) — its Password Protection and private/production gating, plus a better Protection Bypass for Automation (many named, individually revocable tokens vs Vercel's one project-wide secret). A self-contained middleware gate for ANY framework on Vercel (Next.js proxy/middleware, or SvelteKit/Nuxt/Astro/Remix/static sites via framework-agnostic Routing Middleware): gates PREVIEW deployments by default and production opt-in, unlock once via a signed cookie, only a scrypt hash in env, a FULLY BRANDED unlock page (your own HTML/CSS/logo from the middleware — Vercel's password screen has no theming hook), and zero prod cost (the build strips the gate from prod builds). Use when asked to password-protect or basic-auth a preview/staging URL, avoid or cancel that $150/mo add-on, password-protect on Hobby where Vercel won't sell it, brand/white-label a password wall for a client, add a login that "shows once and stays unlocked", set or ROTATE the preview password, add/remove bypass tokens for CI or third-party automation (Lighthouse, uptime checks), protect previews on an app with NO existing middleware, gate a production or pre-launch site with a shared password (coming-soon page, client demo, private internal tool — see "Gating production too"), or decide between a DIY gate and Vercel Authentication (free team SSO).
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "1.8.2"
+  version: "1.9.0"
 ---
 
 # Vercel preview password gate
 
-A free, portable password wall for **preview deployments only**. Humans see a
-brandable unlock form once (a signed 1-year cookie keeps them in); automation
-passes with named bypass tokens via header or query parameter. Production ships
-**no middleware function at all** (Mode B) or a one-boolean short-circuit
-(Mode A), so the gate's production cost is zero. Only a **salted hash** of the
-password is stored; unlock cookies are keyed per-credential, so rotating the
-password or removing a bypass token revokes exactly the cookies it issued.
+A free, portable password wall for **preview deployments by default** — and for
+**production too, opt-in** (see "Gating production too"). Humans see a brandable
+unlock form once (a signed 1-year cookie keeps them in); automation passes with
+named bypass tokens via header or query parameter. In the default preview-only
+posture, production ships **no middleware function at all** (Mode B) or a
+one-boolean short-circuit (Mode A), so the gate's production cost is zero. Only
+a **scrypt hash** of the password is stored; unlock cookies are keyed
+per-credential, so rotating the password or removing a bypass token revokes
+exactly the cookies it issued.
+
+## What this reimplements (and what it doesn't)
+
+This skill is a DIY reimplementation of Vercel's **Advanced Deployment
+Protection** add-on — **$150/mo on Pro**, included on Enterprise, and **not sold
+on Hobby at any price** — rebuilt in one middleware file so it costs nothing on
+any plan. Vercel bundles three features into that add-on: the gate ships the two
+that matter for a password wall, and the third is a documented one-line fork.
+
+| Advanced Deployment Protection bundles… | This skill's equivalent |
+| --- | --- |
+| **Password Protection** — the headline feature | ✅ Unlock form + `PREVIEW_PASSWORD_HASH` (scrypt). Matches the platform's semantics: enter once per deployment URL, and changing the password invalidates the cookies it issued. |
+| **Private Production Deployments** (the "All Deployments" scope — password on the production domain too) | ✅ **Fully supported, opt-in** — the gate can protect production as well as previews (coming-soon page, client demo, private internal tool). Preview-only is just the *default*; "Gating production too" is the three-step switch. Trade-off: you give up the zero-prod-cost property, since the middleware then runs in prod. |
+| **Deployment Protection Exceptions** — "disable Deployment Protection for a list of **preview domains**" (whole domain goes public) | 🟡 Not shipped as a feature, but it's a **one-line fork**: the exception axis is the request *host*, so early-return from `previewGate` when `request.headers.get("host")` is in an allowlist (e.g. a `PREVIEW_GATE_UNPROTECTED_HOSTS` env var). Note the gate's `matcher` is **not** this — that's path-level (skip `/api`, static assets), a different axis. |
+
+Adjacent Deployment Protection features, for orientation:
+
+| Vercel feature | Plan / price | This skill |
+| --- | --- | --- |
+| **Protection Bypass for Automation** | All plans, but **one** project-wide secret | ✅ Improved on: `PREVIEW_GATE_BYPASS_TOKENS` gives **many named, individually revocable** tokens; same header / query-param / set-cookie UX. |
+| **Shareable Links** | Pro+ | ❌ Not reimplemented. A per-recipient bypass token is the closest analogue (no TTL, no per-alias minting). |
+| **Vercel Authentication** (team SSO) | Free, all plans | ❌ **Can't be** — the session lives on vercel.com. See Step 0; prefer it when it fits. |
+| **Trusted IPs** / **Passport** | Enterprise | ❌ Out of scope. |
+
+**Where the DIY version is genuinely better:** the unlock page is *yours*. Vercel's
+password screen is Vercel-branded and exposes no customisation — the entire
+configuration surface across dashboard, API, and Terraform is `deploymentType` +
+`password` (verified against Vercel's Password Protection docs, 2026-07-17).
+Because this gate renders its own HTML from the middleware, you can match the
+client's brand, logo, fonts, and design system — which matters when the wall is
+the first thing a client or stakeholder sees. See
+"Style the unlock page" below (it's a required install step, not a nicety).
+
+**Where the platform version is genuinely better:** it runs *before* your code
+(so it protects static assets and any route, with no middleware to misconfigure),
+it can't fail open on a missing env var, and it's Vercel's problem to maintain.
+This gate is a **speed bump**, not auth — see the gotcha of the same name.
 
 Release-method agnostic: everything keys off the Vercel environment
 (`VERCEL_TARGET_ENV`), never branch names — it composes with any
@@ -27,7 +66,8 @@ promotion/branch/deploy model.
 | --- | --- |
 | Only the Vercel team views previews | **Vercel Authentication** (Deployment Protection → Standard). Free on all plans, zero code, team members pass invisibly via their Vercel login. Prefer this when it fits. |
 | External stakeholders, team on Pro | Vercel Authentication + **Shareable Links** (Pro). Still zero code. |
-| Anyone-with-a-password, for free | **This skill.** (Vercel's own password protection is the paid "Advanced Deployment Protection" add-on — ~$150/mo last verified 2026-07; re-check pricing.) |
+| Anyone-with-a-password, for free | **This skill.** Vercel's **Password Protection** is Enterprise-only, or **Pro + $150/mo** for the *Advanced Deployment Protection* add-on (which you must keep ≥30 days before you can cancel). On **Hobby it can't be bought at all** — the DIY gate is the only password option there. Verified against Vercel's docs 2026-07-17; re-check pricing. |
+| The password page must carry **your/your client's branding** | **This skill.** Vercel's password screen is Vercel's — `deploymentType` + `password` is its whole config surface, with no theming hook. This gate renders your own HTML. |
 | Non-Next framework, static export, or SPA on Vercel | **Still this skill** — use the framework-agnostic template via Vercel Routing Middleware (see "Pick your template"), which runs platform-level before the app or static assets. |
 
 A DIY gate **cannot** detect "is this visitor logged into Vercel" — that session
@@ -236,8 +276,12 @@ but it's no longer free.
 
 ## Style the unlock page (required when installing)
 
-The form in `unlockFormHtml()` is a deliberately neutral baseline. When
-installing the gate into a real project, **restyle it professionally to match
+The form in `unlockFormHtml()` is a deliberately neutral baseline. Styling it is
+**the payoff for doing this yourself** — Vercel's paid Password Protection shows
+Vercel's own screen with no theming hook, so a branded wall is something the
+add-on cannot buy. It's also often the first thing a client or stakeholder sees.
+
+When installing the gate into a real project, **restyle it professionally to match
 the project's existing look and feel** — check for a design system, brand
 tokens, fonts, logo, and how existing auth/error pages are styled, and mirror
 them. If the project has no design language, keep it minimal and clean rather
@@ -423,3 +467,16 @@ prints the resolved target alongside VERCEL_ENV (string only, no behavior
 change). `VERCEL_TARGET_ENV` semantics (carries custom-environment names,
 available at build time AND runtime) verified against Vercel's system
 environment variables reference, 2026-07-17.
+v1.9.0 (2026-07-17): framed the skill as what it is — a free reimplementation of
+Vercel's **Advanced Deployment Protection** add-on — with a feature-by-feature
+parity table, and documented the branded-unlock-page advantage. Facts verified
+against Vercel's Deployment Protection and Password Protection docs, 2026-07-17:
+the add-on is **$150/mo** for Pro ("you pay $150 per month for the add-on"),
+bundles Password Protection + Private Production Deployments + Deployment
+Protection Exceptions, is included on Enterprise, requires a **30-day minimum**
+before cancelling, and Password Protection is "Available on the Enterprise plan,
+or as a paid add-on for Pro plans" — i.e. **not purchasable on Hobby**, where
+this gate is the only password option. The no-branding claim is from the
+documented config surface: dashboard, REST (`passwordProtection`), and Terraform
+expose only `deploymentType` + `password`, with no theming hook — an argument
+from absence, so re-check if Vercel ships customisation.
