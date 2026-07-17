@@ -4,7 +4,7 @@ description: "A free DIY reimplementation of Vercel's $150/mo Advanced Deploymen
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "1.11.1"
+  version: "1.11.2"
 ---
 
 # Vercel deployment password gate
@@ -251,24 +251,23 @@ Lifecycle:
 
 | Context | What happens |
 | --- | --- |
-| Local `next dev` / `next build`, non-Vercel hosts, `VERCEL_TARGET_ENV=development` | Gate no-ops **when no credentials are set locally** (the normal case — the hash lives in Vercel's env, not your `.env`). Test the gate locally with `VERCEL_TARGET_ENV=preview DEPLOY_GATE_PASSWORD=test next dev`. |
+| Local `next dev` / a Vite dev server (`NODE_ENV=development`), `vercel dev` (`VERCEL_ENV=development`), non-Vercel hosts | Gate no-ops — a dev server is detected by `NODE_ENV=development` (or a `development` Vercel target), so it stays ungated **even if you've pulled preview creds into `.env.local`**. Test the gate locally by forcing a preview target: `VERCEL_TARGET_ENV=preview DEPLOY_GATE_PASSWORD=test next dev`. |
 | Vercel **preview** OR any **custom environment** (e.g. `staging`) build | File ships, gate active (keyed on `VERCEL_TARGET_ENV`). The build-strip only fires on true `production` (`VERCEL_TARGET_ENV`), so custom-env builds keep the proxy. |
 | Vercel **production** build | Script deletes the gate file before `next build` → the deployment provisions **no middleware function** → zero invocations, zero cost, structurally. |
 
-> **Enable "System Environment Variables" on the project** (Vercel → Settings →
-> Environment Variables — it's normally on). The gate keys off `VERCEL_TARGET_ENV`;
-> with the toggle **off**, no `VERCEL_*` var reaches the runtime, so the gate can't
-> read the target. It still **fails safe** — a configured preview gates anyway
-> (credentials-present + unknown-env → gate), and production stays open because
-> preview-scoped creds aren't present there — but the build-strip also goes inert
-> (it needs `VERCEL=1`), so production ships the (no-op) middleware and you lose the
-> zero-cost property until the toggle is back on.
-
-> **Local-dev note (changed):** if you `vercel env pull` **preview** vars into
-> `.env.local` (so the hash is present locally), `next dev` now shows the unlock
-> form — credentials-present + no `VERCEL_TARGET_ENV` is treated as "gate, we
-> can't prove we're local". Pull the *development* environment (which has no
-> gate creds) for an ungated local run, or set the password and unlock once.
+> **How local vs. preview is told apart (and why the System-Env toggle matters).**
+> The gate passes on a `production`/`development` Vercel target, and on a local
+> dev server — detected by `NODE_ENV === "development"` (which `next dev` and
+> Vite set, and which a Vercel deployment never has at runtime). It gates every
+> remote target otherwise. The one ambiguous case is a Vercel **preview with
+> "System Environment Variables" disabled** (Vercel → Settings → Environment
+> Variables — normally on): with the toggle off, no `VERCEL_*` var reaches the
+> runtime, so the target reads `undefined` — but `NODE_ENV` is `production`
+> there (it isn't one of the toggle-gated `VERCEL_*` vars), so the gate can tell
+> it apart from local dev and **still gates it**. It fails safe either way. The
+> only cost of leaving the toggle off: the build-strip needs `VERCEL=1`, so it
+> goes inert and production ships the (no-op) middleware — you lose the zero-cost
+> property until the toggle is back on. **Recommend enabling it.**
 
 Safety guards in the removal script: it only deletes a file carrying the
 `@deploy-gate:managed` marker (never hand-written middleware — if no marked file

@@ -344,19 +344,26 @@ export async function previewGate(request: Request): Promise<GateResult> {
   // the custom name; fall back to VERCEL_ENV when it's absent (older Vercel,
   // non-Vercel, local). Gate every remote target except production.
   const target = process.env.VERCEL_TARGET_ENV ?? process.env.VERCEL_ENV;
-  // Never gate true production or the local dev server.
+  // Never gate true production, or a Vercel `development` target (`vercel dev`).
   if (target === "production" || target === "development") return { action: "pass" };
+
+  // Local dev server: no Vercel target AND NODE_ENV=development. Dev servers set
+  // NODE_ENV=development; a Vercel deployment always runs NODE_ENV=production —
+  // including a preview with "System Environment Variables" disabled, the only
+  // other case where target reads `undefined`. NODE_ENV is NOT toggle-gated, so
+  // it's readable when the VERCEL_* vars are hidden. Keeps local dev ungated
+  // even with preview creds pulled, WITHOUT ungating a real preview. The
+  // documented local-test flow sets VERCEL_TARGET_ENV=preview, so the gate runs.
+  if (target === undefined && process.env.NODE_ENV === "development") return { action: "pass" };
 
   const configState = gateConfig();
   const tokens = bypassTokens();
 
-  // Fully unconfigured → fail open (fresh clone, local dev, or non-Vercel with
-  // no gate env). This — NOT a blanket `target === undefined` pass — is what
-  // keeps local/CI from bricking. A Vercel preview with "System Environment
-  // Variables" disabled exposes no VERCEL_* var at all, so target reads
-  // `undefined` there too; passing through on undefined would ungate a
-  // configured preview. So when credentials ARE present we fall through and
-  // gate even if we can't read the target.
+  // Fully unconfigured → fail open (fresh clone, or non-Vercel with no gate
+  // env). This — NOT a blanket `target === undefined` pass — is what keeps CI
+  // and misc hosts from bricking. When target is `undefined` but NODE_ENV isn't
+  // "development" (a Vercel preview with System Env Vars disabled) and
+  // credentials ARE present, we fall through and gate rather than leak.
   if (configState === null && tokens.absent) return { action: "pass" };
 
   // Deployment Protection Exceptions equivalent: an explicitly listed host is

@@ -160,3 +160,17 @@ fail-open holes and fixed the install-blockers a review pass surfaced.
 - Neutralized preview-specific unlock-form copy (the gate protects production
   too). All fixes verified: 16 gate + 24 host + 7 config-fallback cases pass
   against code extracted from the templates; both templates typecheck clean.
+
+v1.11.2 (2026-07-17): refined the F4 local-vs-preview detection. v1.11.1 gated
+whenever the Vercel target was unknown and credentials were present — correct for
+a toggle-off preview, but it also gated a plain `next dev` that had preview creds
+pulled into `.env.local`. Added a precise local-dev escape: pass when
+`VERCEL_TARGET_ENV`/`VERCEL_ENV` is undefined AND `NODE_ENV === "development"`.
+`next dev` / Vite dev servers set NODE_ENV=development; a Vercel deployment always
+runs NODE_ENV=production — including a preview with System Environment Variables
+disabled (the only other undefined-target case), and NODE_ENV is not one of the
+toggle-gated VERCEL_* vars — so the escape restores local-dev convenience without
+reopening the leak. The documented local-test flow (VERCEL_TARGET_ENV=preview)
+sets a defined target, so it still gates. Verified: 6 NODE_ENV cases + the
+existing 16 end-to-end gate cases pass. NODE_ENV's exclusion from the System
+Environment Variables list confirmed against Vercel's docs, 2026-07-17.

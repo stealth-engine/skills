@@ -367,21 +367,28 @@ export async function previewGate(
   // the custom name; fall back to VERCEL_ENV when it's absent (older Vercel,
   // non-Vercel, local). Gate every remote target except production.
   const target = process.env.VERCEL_TARGET_ENV ?? process.env.VERCEL_ENV;
-  // Never gate true production or the local dev server.
+  // Never gate true production, or a Vercel `development` target (`vercel dev`).
   if (target === "production" || target === "development") return {};
+
+  // Local dev server: no Vercel target AND NODE_ENV=development. `next dev`
+  // (and Vite-based dev servers) set NODE_ENV=development; a Vercel deployment
+  // always runs NODE_ENV=production — including a preview with "System
+  // Environment Variables" disabled, which is the only other case where target
+  // reads `undefined`. NODE_ENV is NOT one of the toggle-gated VERCEL_* vars,
+  // so it's still readable when they're hidden. This keeps `next dev` ungated
+  // even with preview creds pulled into .env, WITHOUT ungating a real preview.
+  // The documented "test the gate locally" flow sets VERCEL_TARGET_ENV=preview,
+  // so target is defined and this branch doesn't apply — the gate still runs.
+  if (target === undefined && process.env.NODE_ENV === "development") return {};
 
   const configState = gateConfig();
   const tokens = bypassTokens();
 
-  // Fully unconfigured → fail open (fresh clone, local dev, or non-Vercel with
-  // no gate env). This — NOT a blanket `target === undefined` pass — is what
-  // keeps local/CI from bricking. A Vercel preview with "System Environment
-  // Variables" disabled exposes no VERCEL_* var at all, so target reads
-  // `undefined` there too; passing through on undefined would ungate a
-  // configured preview. So when credentials ARE present we fall through and
-  // gate even if we can't read the target (regression note: `next dev` with
-  // preview creds pulled into .env now shows the form — set no creds locally,
-  // or expect the gate; documented in SKILL.md).
+  // Fully unconfigured → fail open (fresh clone, or non-Vercel with no gate
+  // env). This — NOT a blanket `target === undefined` pass — is what keeps CI
+  // and misc hosts from bricking. When target is `undefined` but NODE_ENV isn't
+  // "development" (a Vercel preview with System Env Vars disabled) and
+  // credentials ARE present, we fall through and gate rather than leak.
   if (configState === null && tokens.absent) return {};
 
   // Deployment Protection Exceptions equivalent: an explicitly listed host is
