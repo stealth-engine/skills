@@ -184,8 +184,7 @@ function normalizeHost(value: string): string {
   return withoutPort.endsWith(".") ? withoutPort.slice(0, -1) : withoutPort;
 }
 
-function isUnprotectedHost(request: Request): boolean {
-  const allowlist = unprotectedHosts();
+function isUnprotectedHost(request: Request, allowlist: string[]): boolean {
   if (allowlist.length === 0) return false;
   // SCOPE: this is safe ON VERCEL because Vercel's edge selects the deployment
   // from this same Host value, so the header cannot be desynced from the
@@ -380,28 +379,37 @@ export async function previewGate(request: Request): Promise<GateResult> {
 
   const configState = gateConfig();
   const tokens = bypassTokens();
+  const hosts = unprotectedHosts();
 
   // Fully unconfigured → fail open (fresh clone, or non-Vercel with no gate
   // env). This — NOT a blanket `target === undefined` pass — is what keeps CI
   // and misc hosts from bricking. When target is `undefined` but NODE_ENV isn't
   // "development" (a Vercel preview with System Env Vars disabled) and
-  // credentials ARE present, we fall through and gate rather than leak.
-  if (configState === null && tokens.absent) return { action: "pass" };
+  // credentials ARE present, we fall through and gate rather than leak. A
+  // declared host-exception list COUNTS as configured (it means "these hosts
+  // public, the REST gated"), so it too suppresses the fail-open.
+  if (configState === null && tokens.absent && hosts.length === 0) return { action: "pass" };
 
   // Deployment Protection Exceptions equivalent: an explicitly listed host is
   // public. Honored BEFORE the malformed 503 so an exception survives a bad
   // hash — but ONLY when target is a known Vercel env: the check trusts the Host
   // header, safe only because Vercel's edge routes on it. When target is
   // undefined (env hidden, or off-Vercel) Host is spoofable, so skip it.
-  if (target !== undefined && isUnprotectedHost(request)) return { action: "pass" };
+  if (target !== undefined && isUnprotectedHost(request, hosts)) return { action: "pass" };
 
   // Present-but-unusable config → fail closed. Malformed hash / over-long legacy
-  // password, or (when tokens are the SOLE credential) unusable token JSON.
-  if (configState === "malformed" || (configState === null && tokens.malformed)) {
+  // password; unusable token JSON when tokens are the SOLE credential; OR a
+  // host-exception list declared with NO password/token to gate the other hosts
+  // (reaching here with config null + tokens absent means hosts were declared).
+  if (
+    configState === "malformed" ||
+    (configState === null && tokens.malformed) ||
+    (configState === null && tokens.absent)
+  ) {
     return {
       action: "block",
       response: new Response(
-        "Deployment gate misconfigured — DEPLOY_GATE_PASSWORD_HASH is not a valid s2 hash, DEPLOY_GATE_PASSWORD exceeds the maximum length, or DEPLOY_GATE_BYPASS_TOKENS yielded no usable tokens.",
+        "Deployment gate misconfigured — DEPLOY_GATE_PASSWORD_HASH is not a valid s2 hash, DEPLOY_GATE_PASSWORD exceeds the maximum length, DEPLOY_GATE_BYPASS_TOKENS yielded no usable tokens, or DEPLOY_GATE_UNPROTECTED_HOSTS is set with no password/token to gate the other hosts.",
         { status: 503, headers: { "cache-control": "no-store" } },
       ),
     };

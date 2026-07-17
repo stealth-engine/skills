@@ -280,3 +280,17 @@ v1.11.8 (2026-07-17, PR #24 — two Codex P2s on the round-7 code):
   behavior change (keeping the Host-spoof protection is right) — the fix is the
   docs.
 Both templates typecheck; 16 e2e + 7 blank-secret + 6 NODE_ENV gate cases pass.
+
+v1.11.9 (2026-07-17, PR #24 — Codex P2 on the exception-only config state):
+**A host-exception list with no password/token no longer fails open.** Setting
+DEPLOY_GATE_UNPROTECTED_HOSTS alone (e.g. in a custom env where only the exception
+list was added) hit the "fully unconfigured → fail open" branch and made EVERY
+host public — even though declaring exceptions means "these hosts public, the rest
+gated". Now a declared exception list counts as configured state: it suppresses the
+fail-open, listed hosts stay public, and non-listed hosts fail CLOSED (503, message
+names the missing-credential cause). Same fail-open-on-misconfiguration class as the
+blank-secret fixes. `isUnprotectedHost` now takes the parsed allowlist (computed once
+in previewGate). Verified: 8 exception-config cases (listed→pass, non-listed→503,
++password→normal, fresh-clone still fails open, toggle-off→503) plus the full
+regression — 16 e2e + 7 blank + 6 NODE_ENV + 24 host — all pass; both templates
+typecheck.
