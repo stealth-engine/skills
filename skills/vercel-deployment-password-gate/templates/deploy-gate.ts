@@ -500,7 +500,13 @@ export async function previewGate(
 export async function proxy(request: NextRequest) {
   const gate = await previewGate(request);
   if (gate.block) return gate.block;
-  const response = NextResponse.next();
+  // Strip the bypass token from the headers forwarded upstream, so app routes /
+  // server actions / request logging never see it (the query-param path already
+  // strips it from the URL). Harmless to always strip — the header only means
+  // something to the gate.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.delete(BYPASS_PARAM);
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
   return gate.setCookie
     ? withUnlockCookie(response, gate.setCookie, request.nextUrl.protocol === "https:")
     : response;

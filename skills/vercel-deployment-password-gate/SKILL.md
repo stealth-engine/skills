@@ -4,7 +4,7 @@ description: "A free DIY reimplementation of Vercel's $150/mo Advanced Deploymen
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "1.11.7"
+  version: "1.11.8"
 ---
 
 # Vercel deployment password gate
@@ -203,6 +203,10 @@ docs use for this codemod, or rename the file
      const gate = await previewGate(request);
      if (gate.block) return gate.block;
 
+     // If you use header-bypass automation, strip the token from the headers
+     // your app sees (Mode B's proxy.ts does this for you; in Mode A it's yours
+     // to do). Build the response from these cleaned headers, e.g.
+     //   const h = new Headers(request.headers); h.delete("x-deploy-gate-bypass");
      const response = await yourExistingLogic(request);
      const secure = request.nextUrl.protocol === "https:";
      return gate.setCookie ? withUnlockCookie(response, gate.setCookie, secure) : response;
@@ -283,10 +287,13 @@ Lifecycle:
 > Variables — normally on): with the toggle off, no `VERCEL_*` var reaches the
 > runtime, so the target reads `undefined` — but `NODE_ENV` is `production`
 > there (it isn't one of the toggle-gated `VERCEL_*` vars), so the gate can tell
-> it apart from local dev and **still gates it**. It fails safe either way. The
-> only cost of leaving the toggle off: the build-strip needs `VERCEL=1`, so it
+> it apart from local dev and **still gates it**. It fails safe either way. Two
+> costs of leaving the toggle off: (1) the build-strip needs `VERCEL=1`, so it
 > goes inert and production ships the (no-op) middleware — you lose the zero-cost
-> property until the toggle is back on. **Recommend enabling it.**
+> property; and (2) **`DEPLOY_GATE_UNPROTECTED_HOSTS` stops working** — host
+> exceptions are only honored when the target is a known Vercel env (Host is
+> spoofable otherwise), so with the toggle off a domain you marked public stays
+> gated. **Recommend enabling it** — required if you use host exceptions.
 
 Safety guards in the removal script: it only deletes a file carrying the
 `@deploy-gate:managed` marker (never hand-written middleware — if no marked file
@@ -543,12 +550,16 @@ it makes you type "unprotect my domain" for a reason):
   lag as password rotation. Redeploy if it matters.
 - **Unset (the default) = nothing is excepted**, so existing installs are
   unaffected.
-- **Vercel-only.** The check trusts the `Host` header, which is safe here
-  *because Vercel's edge routes on that same value* — you can't forge it into
-  reaching a deployment you weren't routed to. That's a property of Vercel's
-  routing, not of the attacker. Self-hosted or behind a proxy that routes on the
-  absolute-form target or TLS SNI while forwarding the client's `Host`, this
-  becomes spoofable — don't use this var off Vercel.
+- **Vercel-only, and needs "System Environment Variables" ON.** The check trusts
+  the `Host` header, which is safe here *because Vercel's edge routes on that same
+  value* — you can't forge it into reaching a deployment you weren't routed to.
+  That's a property of Vercel's routing, not of the attacker. So the gate honors
+  exceptions **only when it can confirm it's on Vercel** (a known
+  `VERCEL_TARGET_ENV`/`VERCEL_ENV`). With the **System-Env-Vars toggle off** those
+  vars are absent, so exceptions are silently **not** honored and the host stays
+  gated — enable the toggle if you use this var. Self-hosted or behind a proxy
+  that routes on the absolute-form target or TLS SNI while forwarding the client's
+  `Host`, `Host` is spoofable — don't use this var off Vercel.
 - Scope it like the other vars: Preview, plus each custom environment.
 - Vercel's version is preview-domains-only. This one keys off the request host,
   so if you've opted into gating production it will except a production host

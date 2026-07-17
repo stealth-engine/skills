@@ -467,9 +467,15 @@ export async function previewGate(request: Request): Promise<GateResult> {
 export default async function middleware(request: Request) {
   const result = await previewGate(request);
   if (result.action === "block") return result.response;
-  return result.setCookie
-    ? next({ headers: { "set-cookie": result.setCookie } })
-    : next();
+  // Strip the bypass token before forwarding upstream, so app code / request
+  // logging never sees it (the query-param path strips it from the URL). Always
+  // safe — the header only means something to the gate.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.delete(BYPASS_PARAM);
+  return next({
+    request: { headers: requestHeaders },
+    ...(result.setCookie ? { headers: { "set-cookie": result.setCookie } } : {}),
+  });
 }
 
 export const config = {

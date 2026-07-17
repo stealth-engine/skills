@@ -262,3 +262,21 @@ assets are public" gotcha in SKILL.md with the gate-everything alternative
 cookie-compare per asset request; scrypt runs only on the unlock POST. Verified the
 gate-everything matcher gates bundles/data while keeping the tab icon public; both
 templates typecheck. Doc-only — no gate-logic change.
+
+v1.11.8 (2026-07-17, PR #24 — two Codex P2s on the round-7 code):
+- **Bypass token no longer forwarded upstream.** A header-bypassed request had
+  `x-deploy-gate-bypass` passed to the app (via NextResponse.next() / next()), so
+  app routes, server actions, and request logging saw the long-lived token — the
+  query-param path already stripped it, so this was an inconsistency. Both Mode B
+  wrappers now delete the header from the forwarded request; the Mode A example
+  documents doing the same. Verified: the middleware strips the bypass header,
+  keeps other headers, and still persists the cookie.
+- **Host exceptions need the System-Env toggle — documented.** With System
+  Environment Variables disabled, `target` is undefined, so host exceptions
+  (`DEPLOY_GATE_UNPROTECTED_HOSTS`) are correctly not honored (Host is only
+  trusted on a known Vercel env) — but a host the user marked public then stays
+  gated. Corrected the "only cost of the toggle is the strip" note to add this,
+  and flagged the toggle requirement in "Unprotect specific domains". Not a
+  behavior change (keeping the Host-spoof protection is right) — the fix is the
+  docs.
+Both templates typecheck; 16 e2e + 7 blank-secret + 6 NODE_ENV gate cases pass.
