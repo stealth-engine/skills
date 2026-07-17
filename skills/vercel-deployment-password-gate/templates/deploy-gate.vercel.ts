@@ -243,8 +243,12 @@ function getCookie(request: Request, name: string): string | null {
   return null;
 }
 
-function cookieHeader(token: string): string {
-  return `${COOKIE_NAME}=${token}; Max-Age=${COOKIE_MAX_AGE}; Path=/; HttpOnly; Secure; SameSite=Lax`;
+// `secure` gates the `Secure` attribute: every real Vercel deployment is https,
+// but a plain-http origin (the documented `http://localhost` local test) may
+// drop a Secure cookie and never persist the unlock. Callers pass
+// `url.protocol === "https:"`.
+function cookieHeader(token: string, secure: boolean): string {
+  return `${COOKIE_NAME}=${token}; Max-Age=${COOKIE_MAX_AGE}; Path=/; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax`;
 }
 
 /**
@@ -417,10 +421,10 @@ export async function previewGate(request: Request): Promise<GateResult> {
       cleanUrl.searchParams.delete(BYPASS_PARAM); // removes ALL occurrences
       return {
         action: "block",
-        response: redirectResponse(cleanUrl.toString(), cookieHeader(bypass.cookieValue)),
+        response: redirectResponse(cleanUrl.toString(), cookieHeader(bypass.cookieValue, url.protocol === "https:")),
       };
     }
-    return { action: "pass", setCookie: cookieHeader(bypass.cookieValue) };
+    return { action: "pass", setCookie: cookieHeader(bypass.cookieValue, url.protocol === "https:") };
   }
 
   if (!config) {
@@ -447,7 +451,7 @@ export async function previewGate(request: Request): Promise<GateResult> {
         action: "block",
         response: redirectResponse(
           new URL(returnPath, url).toString(),
-          cookieHeader(mintCookie(config.hash, "unlocked")),
+          cookieHeader(mintCookie(config.hash, "unlocked"), url.protocol === "https:"),
         ),
       };
     }
@@ -480,6 +484,6 @@ export const config = {
     // (this is the non-Next template). If your framework serves other internal
     // paths you want public (extensionless data routes, etc.), add them to the
     // negative lookahead, e.g. "/((?!_nuxt/|__data|favicon.ico|…).*)".
-    "/((?!favicon.ico|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|css|js|mjs|map|txt|xml|woff2?)$).*)",
+    "/((?!favicon.ico|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|css|js|mjs|map|woff2?)$).*)",
   ],
 };

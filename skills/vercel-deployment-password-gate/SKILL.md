@@ -4,7 +4,7 @@ description: "A free DIY reimplementation of Vercel's $150/mo Advanced Deploymen
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "1.11.4"
+  version: "1.11.5"
 ---
 
 # Vercel deployment password gate
@@ -49,8 +49,8 @@ closest analogue — no TTL), **Trusted IPs**/**Passport** (out of scope), and
 password screen is Vercel-branded with no *documented* theming hook (its whole
 config surface across dashboard, API, and Terraform is `deploymentType` +
 `password`), so matching a client's brand, logo, and design system is only
-possible DIY. And on **Hobby**, where the add-on isn't sold, this is the only
-password option at all.
+possible DIY. And on **Hobby**, where the docs indicate the add-on isn't sold,
+this is very likely the only password option at all.
 
 **What the platform does better:** it runs *before* your code (protects static
 assets and every route, nothing to misconfigure), it can't fail open on a
@@ -115,8 +115,12 @@ Single self-contained file:
   `VERCEL_ENV`: `VERCEL_ENV` only ever reports `production`/`preview`/`development`
   and collapses every custom environment into one of those buckets, so a custom
   target can read `VERCEL_ENV=production` and slip through **ungated**.
-  `VERCEL_TARGET_ENV` carries the custom name. It **fails open** only when that
-  value is `production`, `development`, or unset (local / non-Vercel).
+  `VERCEL_TARGET_ENV` carries the custom name. It **fails open** when that value
+  is `production` or `development`; when it's **unset**, it fails open only for a
+  genuine local dev server (`NODE_ENV === "development"`) **or** when nothing is
+  configured — a Vercel deploy with System Env Vars disabled also reads unset but
+  runs `NODE_ENV=production`, so a configured one there still gates (see the
+  Mode B lifecycle note).
 - No valid cookie → responds `401` with an inline HTML password form (no extra
   routes/pages added to the app). Form POSTs to `/__deploy-unlock`.
 - **Human auth:** `DEPLOY_GATE_PASSWORD_HASH` stores `s2:<salt>:<scryptHex>` (scrypt, memory-hard)
@@ -175,16 +179,22 @@ The middleware function already runs on every matched request, so the gate adds
 one env-var boolean in production — no new invocations, no meaningful cost.
 
 > ⚠️ **If the host file is legacy `middleware.ts`, migrate it to `proxy.ts`
-> first** (`npx @next/codemod@latest middleware-to-proxy .`, or rename the file
+> first** (`npx @next/codemod@canary middleware-to-proxy .` — the tag Next's proxy
+docs use for this codemod, or rename the file
 > + the exported function and fix test imports). `middleware.ts` runs on the
 > **Edge runtime even in Next 16**, where `node:crypto` does not exist — the
 > gate 500s every request. Caught in a real install (piaf-web, Next 16.2.7,
 > 2026-07-17): `Error: Failed to load external module node:crypto`.
 
-1. Copy [`templates/deploy-gate.ts`](./templates/deploy-gate.ts) to
-   `lib/deploy-gate.ts`.
+1. Copy [`templates/deploy-gate.ts`](./templates/deploy-gate.ts) **next to your
+   host proxy file** and import it *relatively*. If the host proxy is at the
+   project root (`proxy.ts`), put the helper at `lib/deploy-gate.ts`; if the
+   host uses a `src/` layout (`src/proxy.ts`), put it at `src/lib/deploy-gate.ts`
+   — a root `./lib/deploy-gate` import from `src/proxy.ts` resolves to
+   `src/lib/…` and won't find a root `lib/`, so the build fails.
 2. Wire it into the existing `proxy()` / `middleware()` function — check first,
-   attach the cookie to whatever response the pipeline produces last:
+   attach the cookie to whatever response the pipeline produces last. Pass the
+   request protocol so the unlock cookie persists on a local `http://` dev run:
 
    ```ts
    import { previewGate, withUnlockCookie } from "./lib/deploy-gate";
@@ -194,7 +204,8 @@ one env-var boolean in production — no new invocations, no meaningful cost.
      if (gate.block) return gate.block;
 
      const response = await yourExistingLogic(request);
-     return gate.setCookie ? withUnlockCookie(response, gate.setCookie) : response;
+     const secure = request.nextUrl.protocol === "https:";
+     return gate.setCookie ? withUnlockCookie(response, gate.setCookie, secure) : response;
    }
    ```
 
@@ -221,7 +232,11 @@ from production builds only:
    proxy at that level: a root `proxy.ts` in a `src/`-layout app is **silently
    ignored**, and every preview then deploys **ungated even with the password
    set** — the worst failure mode, because nothing errors. (It's checked in — it
-   IS the middleware; lintable, typecheckable.)
+   IS the middleware; lintable, typecheckable.) **If the app customises
+   `pageExtensions`** (e.g. `.page.ts`), Next expects the proxy named to match —
+   `proxy.page.ts` — per Next's proxy docs; a plain `proxy.ts` is ignored (same
+   silent-ungate). Name the file accordingly and point the removal script's
+   `CANDIDATES` at it.
 2. Copy [`templates/remove-proxy-on-prod.mjs`](./templates/remove-proxy-on-prod.mjs)
    to `scripts/remove-proxy-on-prod.mjs`. It scans the common install paths
    (`proxy.ts`, `src/proxy.ts`, `middleware.ts`, `src/middleware.ts`) for the

@@ -211,3 +211,29 @@ v1.11.4 (2026-07-17, PR #24 round-3 Codex findings on the latest commits):
   API docs (2026-07-01).
 Re-confirmed the Greptile re-posts on the latest commit are already-handled: F1
 (bypass cookie) rejected-safe, F2 (prompt echo) fixed, F3 (strip target) fixed.
+
+v1.11.5 (2026-07-17, PR #24 round-4 — CodeRabbit / Codex / Copilot on the latest push):
+- **Blank hash/password/token now fails closed** (verified — a round-3 fix; CodeRabbit
+  re-flagged it against the pre-fix commit). Confirmed in-file.
+- **Matcher no longer exempts arbitrary `.txt` / `.xml`** (CodeRabbit): those extensions
+  are removed from the static-asset exclusion in both templates, so only robots.txt /
+  sitemap.xml (excluded by exact name) stay public; other text/XML routes are gated.
+- **Unlock cookie `Secure` is now conditional on request protocol** (Copilot): defaults
+  on (every real Vercel deploy is https), off for a plain-http origin so the documented
+  `http://localhost` local test persists the cookie. `withUnlockCookie` gained an
+  optional `secure` param; `cookieHeader` a required one; call sites pass
+  `protocol === "https:"`.
+- **Mode A src-layout** (Codex): the helper must sit beside the host proxy
+  (`src/lib/deploy-gate.ts` for a `src/proxy.ts` host) or the relative import breaks;
+  documented, and the example now passes the protocol-derived `secure` flag.
+- **pageExtensions** (Codex, verified against Next proxy docs): an app customising
+  `pageExtensions` must name the file `proxy.page.ts` or Next ignores it (silent
+  ungate); documented in Mode B.
+- Docs: intro now states the conditional unset-target fail-open accurately (CodeRabbit);
+  README qualifies the Hobby "only option" claim as an inference (CodeRabbit); codemod
+  tag `@latest` → `@canary` to match Next's docs; fixed a double em-dash in the
+  deploy-gate.ts docblock (Copilot).
+- **Rejected:** Greptile "bypass cookie stays request-only" — re-confirmed safe
+  (`next({ headers })` sets response headers, verified against @vercel/functions).
+Verified: 16 e2e + 7 blank-secret + 6 NODE_ENV gate cases pass; matcher and cookie
+behavior smoke-tested; both templates typecheck clean.

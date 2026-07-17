@@ -1,7 +1,7 @@
 /* @deploy-gate:managed — scripts/remove-proxy-on-prod.mjs strips this file
  * from Vercel production builds; keep this marker line if you edit the file. */
 /**
- * Deployment password gate for Vercel —  — portable, dependency-free.
+ * Deployment password gate for Vercel — portable, dependency-free.
  *
  * Mode B (app has no other middleware): check this file in AS `proxy.ts` at
  * the app root. Lifecycle:
@@ -356,10 +356,17 @@ function htmlResponse(html: string, status = 401): NextResponse {
   });
 }
 
-export function withUnlockCookie<T extends NextResponse>(response: T, token: string): T {
+// `secure` defaults true (every real Vercel deployment is https). Pass false
+// only for a plain-http origin — i.e. the documented `http://localhost` local
+// test — where a Secure cookie may be dropped and the unlock wouldn't persist.
+export function withUnlockCookie<T extends NextResponse>(
+  response: T,
+  token: string,
+  secure = true,
+): T {
   response.cookies.set(COOKIE_NAME, token, {
     httpOnly: true,
-    secure: true,
+    secure,
     sameSite: "lax",
     path: "/",
     maxAge: COOKIE_MAX_AGE,
@@ -445,7 +452,7 @@ export async function previewGate(
       cleanUrl.searchParams.delete(BYPASS_PARAM); // removes ALL occurrences
       const redirect = NextResponse.redirect(cleanUrl, 303);
       redirect.headers.set("cache-control", "no-store");
-      return { block: withUnlockCookie(redirect, bypass.cookieValue) };
+      return { block: withUnlockCookie(redirect, bypass.cookieValue, request.nextUrl.protocol === "https:") };
     }
     return { setCookie: bypass.cookieValue };
   }
@@ -473,7 +480,7 @@ export async function previewGate(
       const redirect = NextResponse.redirect(new URL(returnPath, request.url), 303);
       redirect.headers.set("cache-control", "no-store");
       return {
-        block: withUnlockCookie(redirect, mintCookie(config.hash, "unlocked")),
+        block: withUnlockCookie(redirect, mintCookie(config.hash, "unlocked"), request.nextUrl.protocol === "https:"),
       };
     }
     return { block: htmlResponse(unlockFormHtml(returnPath, true)) };
@@ -494,7 +501,9 @@ export async function proxy(request: NextRequest) {
   const gate = await previewGate(request);
   if (gate.block) return gate.block;
   const response = NextResponse.next();
-  return gate.setCookie ? withUnlockCookie(response, gate.setCookie) : response;
+  return gate.setCookie
+    ? withUnlockCookie(response, gate.setCookie, request.nextUrl.protocol === "https:")
+    : response;
 }
 
 export const config = {
@@ -503,6 +512,6 @@ export const config = {
     // The extension alternative is $-anchored: without it, any PAGE whose
     // path merely contains ".js"/".css"/… (e.g. /blog/why.js-rocks) would
     // silently skip the gate.
-    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|css|js|map|txt|xml|woff2?)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|css|js|map|woff2?)$).*)",
   ],
 };
