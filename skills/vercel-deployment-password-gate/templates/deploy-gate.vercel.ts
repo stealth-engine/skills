@@ -486,6 +486,17 @@ export const config = {
     // rule — so there are NO Next-specific `_next/*` entries here (this is the
     // non-Next template). To make other internal paths public, add an anchored
     // entry to the negative lookahead (e.g. `_nuxt/` for a directory prefix).
+    //
+    // ⚠️ SECURITY — excluded assets are PUBLIC (they never run the gate). For an
+    // SSR app that's fine (JS/CSS is framework code). But a **static site or SPA
+    // often bakes its content/data into the hashed JS bundle** — with this
+    // matcher, anyone who learns an asset URL fetches that content WITHOUT the
+    // password. If the material in your bundles is sensitive, gate everything:
+    // replace the line below with `"/((?!favicon\\.ico$).*)"` (keeps only the
+    // tab icon public) and inline the unlock page's logo as a data URI, since a
+    // same-origin logo would then be gated too. The per-request cost is just a
+    // cookie compare (scrypt runs only on the unlock POST). See SKILL.md's
+    // "Static assets are public" gotcha.
     "/((?!favicon\\.ico$|robots\\.txt$|sitemap\\.xml$|.*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|css|js|mjs|map|woff2?)$).*)",
   ],
 };

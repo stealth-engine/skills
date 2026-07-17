@@ -515,6 +515,9 @@ export const config = {
     // $-anchored too, so an unanchored `robots.txt` can't prefix-match a page
     // like /robots.txt/secret and leak it. (`_next/static|_next/image` stay
     // directory PREFIXES — that namespace is Next-reserved, no page lives there.)
+    // NOTE: excluded assets are PUBLIC. Fine for SSR (they're framework code); if
+    // client bundles carry sensitive baked-in data, gate them too — see SKILL.md's
+    // "Static assets are public" gotcha.
     "/((?!_next/static|_next/image|favicon\\.ico$|robots\\.txt$|sitemap\\.xml$|.*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|css|js|map|woff2?)$).*)",
   ],
 };

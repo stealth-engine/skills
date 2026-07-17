@@ -4,7 +4,7 @@ description: "A free DIY reimplementation of Vercel's $150/mo Advanced Deploymen
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "1.11.6"
+  version: "1.11.7"
 ---
 
 # Vercel deployment password gate
@@ -557,6 +557,19 @@ it makes you type "unprotect my domain" for a reason):
 
 ## Gotchas
 
+- **Static assets are public — matters for SPAs / static sites.** The `matcher`
+  excludes real static-asset requests (`.js`, `.css`, images, fonts, source
+  maps) so they never run the gate. For an **SSR app** that's fine — those are
+  framework code. But a **static export or SPA often bakes its content or data
+  into the hashed JS bundle**, and with the default matcher anyone who learns an
+  asset URL can fetch that material **without the password** — the gate only
+  protects the HTML shell. If your bundles carry anything sensitive, **gate
+  everything**: set the matcher to `"/((?!favicon\.ico$).*)"` (only the tab icon
+  stays public) and inline the unlock page's logo as a data URI (a same-origin
+  logo would otherwise be gated). It costs one cheap cookie-compare per asset
+  request (scrypt runs only on the unlock POST), and in Mode B production still
+  ships no middleware at all. This is the "speed bump, not auth" line in
+  practice — decide per app.
 - **Custom environments don't inherit Preview env vars.** The gate activates on
   custom environments (`VERCEL_TARGET_ENV=staging`), but `vercel env add …
   preview` doesn't reach them — each custom environment is its own scope. Add

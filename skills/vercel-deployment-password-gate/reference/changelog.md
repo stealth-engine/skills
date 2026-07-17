@@ -248,3 +248,17 @@ prefixes — that namespace is Next-reserved.) Verified: the fix gates the 4 byp
 variants and keeps the 3 real metadata files public, tested against the regex extracted
 from the template; 16 e2e + 7 blank-secret + 6 NODE_ENV gate cases still pass; both
 templates typecheck.
+
+v1.11.7 (2026-07-17, PR #24 — Codex P1 on the framework-agnostic matcher):
+**Documented that excluded static assets are public**, and how to gate them. The
+matcher lets `.js`/`.css`/image/font/map requests skip the gate — fine for an SSR
+app (framework code), but a static export or SPA often bakes content/data into the
+hashed JS bundle, so anyone who learns an asset URL could fetch it without the
+password. Rather than flip the default (the skill relies on same-origin assets for
+the unlock-page logo, and calls itself a "speed bump, not auth"), added a
+prominent SECURITY note in the framework-agnostic matcher comment + a "Static
+assets are public" gotcha in SKILL.md with the gate-everything alternative
+(`matcher: "/((?!favicon\.ico$).*)"` + inline the logo as a data URI). Cost is one
+cookie-compare per asset request; scrypt runs only on the unlock POST. Verified the
+gate-everything matcher gates bundles/data while keeping the tab icon public; both
+templates typecheck. Doc-only — no gate-logic change.
