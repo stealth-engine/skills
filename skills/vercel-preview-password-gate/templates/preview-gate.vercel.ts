@@ -88,6 +88,37 @@ function bypassTokens(): BypassTokens {
   return {};
 }
 
+// Deployment Protection Exceptions equivalent: hosts listed here skip the gate
+// entirely and are PUBLIC. Mirrors Vercel's feature, whose exception axis is the
+// domain (not the path — that's what the matcher/config is for). Comma-separated,
+// e.g. PREVIEW_GATE_UNPROTECTED_HOSTS="demo.acme.com, staging.acme.com".
+// Matching is exact, case-insensitive, port-stripped — never suffix/substring:
+// a suffix match on "acme.com" would unprotect every subdomain at once.
+function unprotectedHosts(): string[] {
+  const raw = process.env.PREVIEW_GATE_UNPROTECTED_HOSTS?.trim();
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((h) => normalizeHost(h))
+    .filter((h) => h.length > 0);
+}
+
+function normalizeHost(value: string): string {
+  // Strip a :port and lowercase. Host headers are case-insensitive, and a
+  // preview host can arrive as "example.com:443".
+  return value.trim().toLowerCase().split(":")[0] ?? "";
+}
+
+function isUnprotectedHost(request: Request): boolean {
+  const allowlist = unprotectedHosts();
+  if (allowlist.length === 0) return false;
+  // Trust the Host header only as far as Vercel does: it's the routed host, and
+  // an attacker who could forge it could equally request the real host anyway.
+  const host = normalizeHost(request.headers.get("host") ?? "");
+  if (!host) return false;
+  return allowlist.includes(host);
+}
+
 // scrypt (memory-hard KDF), not plain SHA-256 — raises offline brute-force
 // cost if the stored hash leaks. CodeQL js/insufficient-password-hash flagged
 // the earlier salted-SHA-256 scheme in a real install (2026-07-17). Cost is
@@ -257,6 +288,12 @@ export async function previewGate(request: Request): Promise<GateResult> {
   ) {
     return { action: "pass" };
   }
+
+  // Deployment Protection Exceptions equivalent: an explicitly listed host is
+  // public. Checked before config so an exception holds even while the gate is
+  // misconfigured (fail-closed 503 below would otherwise take the domain down).
+  if (isUnprotectedHost(request)) return { action: "pass" };
+
   const configState = gateConfig();
   const tokens = bypassTokens();
   if (configState === "malformed") {

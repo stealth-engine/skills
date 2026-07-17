@@ -1,10 +1,10 @@
 ---
 name: vercel-preview-password-gate
-description: A free DIY reimplementation of Vercel's $150/mo Advanced Deployment Protection add-on (Enterprise-only otherwise, unbuyable on Hobby) — its Password Protection and private/production gating, plus a better Protection Bypass for Automation (many named, individually revocable tokens vs Vercel's one project-wide secret). A self-contained middleware gate for ANY framework on Vercel (Next.js proxy/middleware, or SvelteKit/Nuxt/Astro/Remix/static sites via framework-agnostic Routing Middleware): gates PREVIEW deployments by default and production opt-in, unlock once via a signed cookie, only a scrypt hash in env, a FULLY BRANDED unlock page (your own HTML/CSS/logo from the middleware — Vercel's password screen has no theming hook), and zero prod cost (the build strips the gate from prod builds). Use when asked to password-protect or basic-auth a preview/staging URL, avoid or cancel that $150/mo add-on, password-protect on Hobby where Vercel won't sell it, brand/white-label a password wall for a client, add a login that "shows once and stays unlocked", set or ROTATE the preview password, add/remove bypass tokens for CI or third-party automation (Lighthouse, uptime checks), protect previews on an app with NO existing middleware, gate a production or pre-launch site with a shared password (coming-soon page, client demo, private internal tool — see "Gating production too"), or decide between a DIY gate and Vercel Authentication (free team SSO).
+description: A free DIY reimplementation of Vercel's $150/mo Advanced Deployment Protection add-on (Enterprise-only otherwise, unbuyable on Hobby) — all three of its features: Password Protection, private/production deployments, and Deployment Protection Exceptions (unprotect specific domains) — plus a better Protection Bypass for Automation (many named, individually revocable tokens vs Vercel's one project-wide secret). A self-contained middleware gate for ANY framework on Vercel (Next.js proxy/middleware, or SvelteKit/Nuxt/Astro/Remix/static sites via framework-agnostic Routing Middleware): gates PREVIEW deployments by default and production opt-in, unlock once via a signed cookie, only a scrypt hash in env, a FULLY BRANDED unlock page (your own HTML/CSS/logo from the middleware — Vercel's password screen has no theming hook), and zero prod cost (the build strips the gate from prod builds). Use when asked to password-protect or basic-auth a preview/staging URL, avoid or cancel that $150/mo add-on, password-protect on Hobby where Vercel won't sell it, brand/white-label a password wall for a client, add a login that "shows once and stays unlocked", set or ROTATE the preview password, add/remove bypass tokens for CI or third-party automation (Lighthouse, uptime checks), make one preview domain public while the rest stay locked, protect previews on an app with NO existing middleware, gate a production or pre-launch site with a shared password (coming-soon page, client demo, private internal tool — see "Gating production too"), or decide between a DIY gate and Vercel Authentication (free team SSO).
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "1.9.0"
+  version: "1.10.0"
 ---
 
 # Vercel preview password gate
@@ -19,42 +19,37 @@ a **scrypt hash** of the password is stored; unlock cookies are keyed
 per-credential, so rotating the password or removing a bypass token revokes
 exactly the cookies it issued.
 
-## What this reimplements (and what it doesn't)
+## What this reimplements
 
-This skill is a DIY reimplementation of Vercel's **Advanced Deployment
-Protection** add-on — **$150/mo on Pro**, included on Enterprise, and **not sold
-on Hobby at any price** — rebuilt in one middleware file so it costs nothing on
-any plan. Vercel bundles three features into that add-on: the gate ships the two
-that matter for a password wall, and the third is a documented one-line fork.
+A free, DIY reimplementation of Vercel's **Advanced Deployment Protection**
+add-on — **$150/mo on Pro** (30-day minimum before you can cancel), included on
+Enterprise, **not sold on Hobby at any price** — rebuilt in one middleware file.
+Vercel bundles three features into the add-on — **all three are supported here**:
 
-| Advanced Deployment Protection bundles… | This skill's equivalent |
+| Advanced Deployment Protection | This skill |
 | --- | --- |
-| **Password Protection** — the headline feature | ✅ Unlock form + `PREVIEW_PASSWORD_HASH` (scrypt). Matches the platform's semantics: enter once per deployment URL, and changing the password invalidates the cookies it issued. |
-| **Private Production Deployments** (the "All Deployments" scope — password on the production domain too) | ✅ **Fully supported, opt-in** — the gate can protect production as well as previews (coming-soon page, client demo, private internal tool). Preview-only is just the *default*; "Gating production too" is the three-step switch. Trade-off: you give up the zero-prod-cost property, since the middleware then runs in prod. |
-| **Deployment Protection Exceptions** — "disable Deployment Protection for a list of **preview domains**" (whole domain goes public) | 🟡 Not shipped as a feature, but it's a **one-line fork**: the exception axis is the request *host*, so early-return from `previewGate` when `request.headers.get("host")` is in an allowlist (e.g. a `PREVIEW_GATE_UNPROTECTED_HOSTS` env var). Note the gate's `matcher` is **not** this — that's path-level (skip `/api`, static assets), a different axis. |
+| **Password Protection** | ✅ Unlock form + `PREVIEW_PASSWORD_HASH` (scrypt), with the platform's own semantics: enter once per deployment URL, and changing the password invalidates the cookies it issued. |
+| **Private Production Deployments** (password on the production domain too) | ✅ Opt-in — previews by default, production via "Gating production too". Trade-off: the middleware then runs in prod, so the zero-prod-cost property is gone. |
+| **Deployment Protection Exceptions** (unprotect specific **preview domains**) | ✅ `PREVIEW_GATE_UNPROTECTED_HOSTS` — comma-separated hosts that skip the gate and are public. Same axis as Vercel's (the *domain*); the `matcher` is a different thing (path-level: `/api`, static assets). See "Unprotect specific domains". |
 
-Adjacent Deployment Protection features, for orientation:
+Plus **Protection Bypass for Automation** (free on all plans, but **one**
+project-wide secret) — ✅ improved on here: many *named, individually revocable*
+tokens, same header / query-param / set-cookie UX.
 
-| Vercel feature | Plan / price | This skill |
-| --- | --- | --- |
-| **Protection Bypass for Automation** | All plans, but **one** project-wide secret | ✅ Improved on: `PREVIEW_GATE_BYPASS_TOKENS` gives **many named, individually revocable** tokens; same header / query-param / set-cookie UX. |
-| **Shareable Links** | Pro+ | ❌ Not reimplemented. A per-recipient bypass token is the closest analogue (no TTL, no per-alias minting). |
-| **Vercel Authentication** (team SSO) | Free, all plans | ❌ **Can't be** — the session lives on vercel.com. See Step 0; prefer it when it fits. |
-| **Trusted IPs** / **Passport** | Enterprise | ❌ Out of scope. |
+Not reimplemented: **Shareable Links** (a per-recipient bypass token is the
+closest analogue — no TTL), **Trusted IPs**/**Passport** (out of scope), and
+**Vercel Authentication**, which *can't* be — that session lives on vercel.com.
 
-**Where the DIY version is genuinely better:** the unlock page is *yours*. Vercel's
-password screen is Vercel-branded and exposes no customisation — the entire
-configuration surface across dashboard, API, and Terraform is `deploymentType` +
-`password` (verified against Vercel's Password Protection docs, 2026-07-17).
-Because this gate renders its own HTML from the middleware, you can match the
-client's brand, logo, fonts, and design system — which matters when the wall is
-the first thing a client or stakeholder sees. See
-"Style the unlock page" below (it's a required install step, not a nicety).
+**Two things $150/mo can't buy you.** The unlock page is *yours* — Vercel's
+password screen is Vercel-branded with no theming hook (its whole config surface
+across dashboard, API, and Terraform is `deploymentType` + `password`), so
+matching a client's brand, logo, and design system is only possible DIY. And on
+**Hobby**, where the add-on isn't sold, this is the only password option at all.
 
-**Where the platform version is genuinely better:** it runs *before* your code
-(so it protects static assets and any route, with no middleware to misconfigure),
-it can't fail open on a missing env var, and it's Vercel's problem to maintain.
-This gate is a **speed bump**, not auth — see the gotcha of the same name.
+**What the platform does better:** it runs *before* your code (protects static
+assets and every route, nothing to misconfigure), it can't fail open on a
+missing env var, and it's Vercel's problem to maintain. This gate is a **speed
+bump**, not auth — see the gotcha of the same name.
 
 Release-method agnostic: everything keys off the Vercel environment
 (`VERCEL_TARGET_ENV`), never branch names — it composes with any
@@ -384,6 +379,40 @@ agent glues it to `vercel env`:
    deployments immediately (cookies are keyed per-token) — but as with the
    password, **already-deployed previews honor the old env until redeployed**.
 
+## Unprotect specific domains (Deployment Protection Exceptions)
+
+The equivalent of Vercel's **Deployment Protection Exceptions**: list hosts that
+skip the gate entirely. Use it when one preview domain must be public — a
+stable demo URL for a client, a webhook receiver, a domain an external service
+crawls — while every other preview stays locked.
+
+```bash
+# comma-separated; exact hosts, not patterns
+vercel env add PREVIEW_GATE_UNPROTECTED_HOSTS preview
+# → demo.acme.com, hooks-preview.acme.com
+```
+
+Semantics, matching Vercel's feature (and its dashboard's deliberate friction —
+it makes you type "unprotect my domain" for a reason):
+
+- **A listed host is fully public.** Not "password optional" — no wall at all.
+  Anything reachable on that host is world-readable. Confirm the host with the
+  user before adding it, and say plainly what goes public.
+- **Exact host match**, case-insensitive, port-stripped. **Not** a suffix or
+  wildcard match — listing `acme.com` does *not* unprotect `demo.acme.com`. This
+  is deliberate: a suffix match would unprotect every subdomain from one typo.
+  List each host explicitly.
+- **Checked before the config check**, so an exception still holds if
+  `PREVIEW_PASSWORD_HASH` is malformed — otherwise the fail-closed 503 would
+  take down a domain the operator explicitly marked public.
+- **Unset (the default) = nothing is excepted**, so existing installs are
+  unaffected.
+- Scope it like the other vars: Preview, plus each custom environment.
+- Vercel's version is preview-domains-only. This one keys off the request host,
+  so if you've opted into gating production it will except a production host
+  too — which is exactly the "public marketing page, gated app" split, but make
+  sure that's what you meant.
+
 ## Gotchas
 
 - **Custom environments don't inherit Preview env vars.** The gate activates on
@@ -480,3 +509,16 @@ this gate is the only password option. The no-branding claim is from the
 documented config surface: dashboard, REST (`passwordProtection`), and Terraform
 expose only `deploymentType` + `password`, with no theming hook — an argument
 from absence, so re-check if Vercel ships customisation.
+v1.10.0 (2026-07-17): **Deployment Protection Exceptions** implemented
+(`PREVIEW_GATE_UNPROTECTED_HOSTS`) in both templates, completing parity with all
+three Advanced Deployment Protection features — previously the skill claimed two
+of three. Matching mirrors Vercel's exception axis (the *domain*): exact host,
+case-insensitive, port-stripped, deliberately **not** suffix/wildcard (a suffix
+match on "acme.com" would unprotect every subdomain from one typo), evaluated
+before the config check so an exception survives a malformed hash, and inert when
+unset so existing installs are unaffected. Definition verified against Vercel's
+Deployment Protection Exceptions docs, 2026-07-17 ("disable Deployment Protection
+… for a list of preview domains") — note this is domain-scoped, which is why the
+path-level `matcher` was never an equivalent. Host-matching logic smoke-tested
+over 15 cases (2026-07-17), including the substring/suffix/prefix-extension
+attacks and missing-Host fail-closed; both templates typecheck clean.
