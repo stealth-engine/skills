@@ -1,4 +1,4 @@
-// Hashes a plaintext preview password into the PREVIEW_PASSWORD_HASH format
+// Hashes a plaintext gate password into the DEPLOY_GATE_PASSWORD_HASH format
 // (`s2:<salt>:<scryptHex>`) used by preview-gate.ts. scrypt (memory-hard KDF),
 // not plain SHA-256 — CodeQL js/insufficient-password-hash flagged the earlier
 // salted-SHA-256 scheme in a real install (2026-07-17).
@@ -6,7 +6,7 @@
 //   node hash-password.mjs                # prompts on stdin (keeps it out of shell history)
 //   node hash-password.mjs '<plaintext>'  # argv — beware shell history
 // Prints ONLY the hash on stdout, so it pipes cleanly:
-//   node hash-password.mjs | vercel env add PREVIEW_PASSWORD_HASH preview
+//   node hash-password.mjs | vercel env add DEPLOY_GATE_PASSWORD_HASH preview
 import { randomBytes, scryptSync } from "node:crypto";
 import { createInterface } from "node:readline";
 

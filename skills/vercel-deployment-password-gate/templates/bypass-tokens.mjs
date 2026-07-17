@@ -1,11 +1,11 @@
-// Manages named automation bypass tokens for PREVIEW_GATE_BYPASS_TOKENS
+// Manages named automation bypass tokens for DEPLOY_GATE_BYPASS_TOKENS
 // (JSON: {"<label>":"<token>", ...}). Pure and local: current JSON in, new
 // JSON out — the agent glues it to `vercel env rm`/`add`.
 // Usage:
 //   node bypass-tokens.mjs add <label> ['<current-json>']   # generates a URL-safe token
 //   node bypass-tokens.mjs remove <label> '<current-json>'
 //   node bypass-tokens.mjs list '<current-json>'
-// stdout = the new JSON (pipe into `vercel env add PREVIEW_GATE_BYPASS_TOKENS preview`)
+// stdout = the new JSON (pipe into `vercel env add DEPLOY_GATE_BYPASS_TOKENS preview`)
 // stderr = human-readable summary (including the newly generated token)
 import { randomBytes } from "node:crypto";
 

@@ -1,10 +1,10 @@
 ---
-name: vercel-preview-password-gate
+name: vercel-deployment-password-gate
 description: A free DIY reimplementation of Vercel's $150/mo Advanced Deployment Protection add-on — all three of its features: Password Protection, private/production deployments, and Deployment Protection Exceptions (unprotect specific domains) — plus named automation bypass tokens, as a self-contained middleware gate for ANY framework on Vercel (Next.js proxy/middleware, or SvelteKit/Nuxt/Astro/Remix/static sites via framework-agnostic Routing Middleware). Gates PREVIEW deployments by default, production opt-in, with a FULLY BRANDED unlock page (your own HTML/CSS/logo from the middleware — Vercel's password screen has no documented theming hook) and zero prod cost. Use when asked to password-protect or basic-auth a preview/staging URL, avoid or cancel that $150/mo add-on, password-protect on a Hobby plan, brand/white-label a password wall for a client, add a login that "shows once and stays unlocked", set or ROTATE the preview password, add/remove bypass tokens for CI or third-party automation (Lighthouse, uptime checks), make one preview domain public while the rest stay locked, protect previews on an app with NO existing middleware, gate a production or pre-launch site with a shared password (coming-soon page, client demo, private internal tool), or decide between a DIY gate and Vercel Authentication (free team SSO).
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "1.10.1"
+  version: "1.11.0"
 ---
 
 # Vercel preview password gate
@@ -29,9 +29,9 @@ supported here**:
 
 | Advanced Deployment Protection | This skill |
 | --- | --- |
-| **Password Protection** | ✅ Unlock form + `PREVIEW_PASSWORD_HASH` (scrypt), mirroring the platform's semantics: enter once per deployment URL, and changing the password invalidates the cookies it issued. One difference: Vercel's change takes effect on existing deployments immediately; ours applies to new builds, so redeploy to revoke now. |
+| **Password Protection** | ✅ Unlock form + `DEPLOY_GATE_PASSWORD_HASH` (scrypt), mirroring the platform's semantics: enter once per deployment URL, and changing the password invalidates the cookies it issued. One difference: Vercel's change takes effect on existing deployments immediately; ours applies to new builds, so redeploy to revoke now. |
 | **Private Production Deployments** (password on the production domain too) | ✅ Opt-in — previews by default, production via "Gating production too". Trade-off: the middleware then runs in prod, so the zero-prod-cost property is gone. |
-| **Deployment Protection Exceptions** (unprotect specific **preview domains**) | ✅ `PREVIEW_GATE_UNPROTECTED_HOSTS` — comma-separated hosts that skip the gate and are public. Same axis as Vercel's (the *domain*); the `matcher` is a different thing (path-level: `/api`, static assets). See "Unprotect specific domains". |
+| **Deployment Protection Exceptions** (unprotect specific **preview domains**) | ✅ `DEPLOY_GATE_UNPROTECTED_HOSTS` — comma-separated hosts that skip the gate and are public. Same axis as Vercel's (the *domain*); the `matcher` is a different thing (path-level: `/api`, static assets). See "Unprotect specific domains". |
 
 Plus an equivalent of **Protection Bypass for Automation**: named, individually
 revocable tokens, same header / query-param / set-cookie UX. This is **parity,
@@ -119,11 +119,11 @@ Single self-contained file:
   value is `production`, `development`, or unset (local / non-Vercel).
 - No valid cookie → responds `401` with an inline HTML password form (no extra
   routes/pages added to the app). Form POSTs to `/__preview-unlock`.
-- **Human auth:** `PREVIEW_PASSWORD_HASH` stores `s2:<salt>:<scryptHex>` (scrypt, memory-hard)
+- **Human auth:** `DEPLOY_GATE_PASSWORD_HASH` stores `s2:<salt>:<scryptHex>` (scrypt, memory-hard)
   — **never the plaintext**. Submitted passwords are run through scrypt and compared
-  constant-time. (Legacy fallback: a plaintext `PREVIEW_PASSWORD` also works.)
+  constant-time. (Legacy fallback: a plaintext `DEPLOY_GATE_PASSWORD` also works.)
 - **Automation auth (mimics Vercel's Protection Bypass for Automation):**
-  `PREVIEW_GATE_BYPASS_TOKENS` stores JSON `{"<label>":"<token>", ...}` —
+  `DEPLOY_GATE_BYPASS_TOKENS` stores JSON `{"<label>":"<token>", ...}` —
   plaintext **by design** (automation must read tokens back; they're generated
   random, never human-reused). Send a token via the `x-preview-gate-bypass`
   **header** (passes through + sets the cookie) or **query parameter** (303
@@ -138,9 +138,9 @@ Single self-contained file:
   rotating the password kills password-issued cookies; removing a bypass token
   kills that token's cookies. `maxAge` 1 year → "unlocks once, stays unlocked".
 - **Absent config fails open** (a fresh clone never bricks its previews);
-  **present-but-malformed `PREVIEW_PASSWORD_HASH` fails CLOSED** (503) — a
+  **present-but-malformed `DEPLOY_GATE_PASSWORD_HASH` fails CLOSED** (503) — a
   typo must not silently publish a preview the operator meant to protect. A
-  legacy `PREVIEW_PASSWORD` longer than the 256-char cap also fails closed
+  legacy `DEPLOY_GATE_PASSWORD` longer than the 256-char cap also fails closed
   (it would hash into a config the unlock form's length cap can never match —
   gated with no way in), and the 503 body names both causes. Malformed
   bypass-token JSON is ignored with a warning (password still works).
@@ -148,6 +148,26 @@ Single self-contained file:
 **Why a cookie, not localStorage:** the decision happens server-side in the
 proxy before any JavaScript runs; the token must travel with the request.
 localStorage physically cannot gate SSR. Same "enter once" UX.
+
+### Env-var names (and the legacy aliases)
+
+All config vars use the **`DEPLOY_GATE_`** prefix, because the gate protects
+production too — the old `PREVIEW_`-prefixed names implied preview-only and were
+misleading once production gating landed:
+
+| Purpose | Current name | Legacy alias (still honoured) |
+| --- | --- | --- |
+| Password hash | `DEPLOY_GATE_PASSWORD_HASH` | `PREVIEW_PASSWORD_HASH` |
+| Plaintext password (legacy scheme) | `DEPLOY_GATE_PASSWORD` | `PREVIEW_PASSWORD` |
+| Automation bypass tokens | `DEPLOY_GATE_BYPASS_TOKENS` | `PREVIEW_GATE_BYPASS_TOKENS` |
+| Unprotected-host allowlist | `DEPLOY_GATE_UNPROTECTED_HOSTS` | *(new — no alias)* |
+
+The gate reads the current name first and **falls back to the legacy alias with
+a one-time warning** if only the old one is set — a rename can't fail open,
+because absent config is intentionally fail-open (an existing install that still
+has `PREVIEW_PASSWORD_HASH` keeps working; migrate at leisure). The current name
+**wins** if both are set. To migrate, add the `DEPLOY_GATE_*` var and remove the
+`PREVIEW_*` one; the alias support is a courtesy, not a permanent contract.
 
 ## Mode A — app already has `middleware.ts` / `proxy.ts`
 
@@ -216,7 +236,7 @@ Lifecycle:
 
 | Context | What happens |
 | --- | --- |
-| Local `next dev` / `next build`, non-Vercel hosts, `VERCEL_TARGET_ENV=development` | File runs, gate no-ops. Test the gate locally with `VERCEL_TARGET_ENV=preview PREVIEW_PASSWORD=test next dev`. |
+| Local `next dev` / `next build`, non-Vercel hosts, `VERCEL_TARGET_ENV=development` | File runs, gate no-ops. Test the gate locally with `VERCEL_TARGET_ENV=preview DEPLOY_GATE_PASSWORD=test next dev`. |
 | Vercel **preview** OR any **custom environment** (e.g. `staging`) build | File ships, gate active (keyed on `VERCEL_TARGET_ENV`). The build-strip only fires on true `production` (`VERCEL_TARGET_ENV`), so custom-env builds keep the proxy. |
 | Vercel **production** build | Script deletes `proxy.ts` before `next build` → the deployment provisions **no middleware function** → zero invocations, zero cost, structurally. |
 
@@ -270,7 +290,7 @@ bump, not a lock.
 
 3. **Env vars — add the Production scope.** The password hash and any bypass
    tokens are Preview-scoped by default; add them to **Production** too, e.g.
-   `… | vercel env add PREVIEW_PASSWORD_HASH production`. Without this the
+   `… | vercel env add DEPLOY_GATE_PASSWORD_HASH production`. Without this the
    production gate has no configured password and **fails open** (absent config
    is intentionally fail-open so a fresh clone isn't bricked).
 
@@ -311,24 +331,35 @@ Same flow for first-time setup and rotation — only the hash is ever stored:
 
 1. **Get the plaintext from the user** (ask directly, or offer to generate one:
    `openssl rand -base64 12`, show it to the user ONCE). Never write the
-   plaintext to any file, env file, commit, or log.
+   plaintext to any file, env file, commit, or log — **shell history counts**,
+   which is why the commands below never put it on a command line.
 2. **Hash it** with the bundled script (matches the gate's scheme, random salt
-   each run):
+   each run). Run it with **no argument** so it prompts on stdin:
 
    ```bash
-   node <skill-dir>/templates/hash-password.mjs '<plaintext>'
+   node <skill-dir>/templates/hash-password.mjs
+   # Preview password: ‹typed, not echoed to history›
    # → s2:<salt>:<scryptHex>
    ```
 
-3. **Store the hash, scoped to Preview only.** Rotation = remove then re-add:
+   The script also accepts `hash-password.mjs '<plaintext>'`, but that lands the
+   password in shell history and in `ps` output — use it only for a throwaway
+   local test, never for a real password.
+
+3. **Store the hash, scoped to Preview only.** Rotation = remove then re-add
+   (the Vercel CLI has no in-place update). Only the hash leaves the machine:
 
    ```bash
-   vercel env rm PREVIEW_PASSWORD_HASH preview -y   # skip on first setup
-   node <skill-dir>/templates/hash-password.mjs '<plaintext>' | vercel env add PREVIEW_PASSWORD_HASH preview
+   vercel env rm DEPLOY_GATE_PASSWORD_HASH preview -y   # skip on first setup
+   node <skill-dir>/templates/hash-password.mjs | vercel env add DEPLOY_GATE_PASSWORD_HASH preview
    ```
 
+   The prompt writes to stderr and the hash to stdout, so the pipe carries only
+   the hash. Pasting the `s2:…` string into the Vercel dashboard is equivalent —
+   the CLI is convenience, not a requirement.
+
    Project uses **custom environments** (e.g. `staging`)? Repeat for each one
-   (`… | vercel env add PREVIEW_PASSWORD_HASH staging`) — custom environments
+   (`… | vercel env add DEPLOY_GATE_PASSWORD_HASH staging`) — custom environments
    have their own env-var scope on Vercel and do NOT inherit Preview vars, yet
    the gate DOES activate there; leave the var unset and that environment has
    absent config → **fails open, silently ungated**.
@@ -345,7 +376,7 @@ Same flow for first-time setup and rotation — only the hash is ever stored:
 ## Manage automation bypass tokens (agent workflow)
 
 Named, individually revocable machine credentials, stored as JSON in
-`PREVIEW_GATE_BYPASS_TOKENS` (Preview scope — plus each custom environment,
+`DEPLOY_GATE_BYPASS_TOKENS` (Preview scope — plus each custom environment,
 which has its own env-var scope; same caveat as the password hash). Use
 [`templates/bypass-tokens.mjs`](./templates/bypass-tokens.mjs) — it's pure
 (JSON in → JSON out on stdout, human summary + generated token on stderr), the
@@ -355,7 +386,7 @@ agent glues it to `vercel env`:
 
    ```bash
    vercel env pull --environment=preview /tmp/preview.env
-   grep '^PREVIEW_GATE_BYPASS_TOKENS=' /tmp/preview.env   # → current JSON
+   grep '^DEPLOY_GATE_BYPASS_TOKENS=' /tmp/preview.env   # → current JSON
    rm /tmp/preview.env                                     # don't leave it around
    ```
 
@@ -373,8 +404,8 @@ agent glues it to `vercel env`:
 3. **Write back** (remove + re-add, like the password):
 
    ```bash
-   vercel env rm PREVIEW_GATE_BYPASS_TOKENS preview -y   # skip on first setup
-   node <skill-dir>/templates/bypass-tokens.mjs add ci '<current>' | vercel env add PREVIEW_GATE_BYPASS_TOKENS preview
+   vercel env rm DEPLOY_GATE_BYPASS_TOKENS preview -y   # skip on first setup
+   node <skill-dir>/templates/bypass-tokens.mjs add ci '<current>' | vercel env add DEPLOY_GATE_BYPASS_TOKENS preview
    ```
 
 4. **Usage by automation** (tell the user):
@@ -384,7 +415,7 @@ agent glues it to `vercel env`:
      gate 303s to the cleaned URL and sets the cookie.
    - Mimic Vercel's `VERCEL_AUTOMATION_BYPASS_SECRET` convention: designate one
      token (e.g. `ci`) and store it as a CI secret named
-     `PREVIEW_GATE_BYPASS_SECRET` for workflows to read.
+     `DEPLOY_GATE_BYPASS_SECRET` for workflows to read.
 5. **Revocation semantics:** removing a token invalidates its cookies on new
    deployments immediately (cookies are keyed per-token) — but as with the
    password, **already-deployed previews honor the old env until redeployed**.
@@ -398,7 +429,7 @@ crawls — while every other preview stays locked.
 
 ```bash
 # comma-separated; exact hosts, not patterns
-vercel env add PREVIEW_GATE_UNPROTECTED_HOSTS preview
+vercel env add DEPLOY_GATE_UNPROTECTED_HOSTS preview
 # → demo.acme.com, hooks-preview.acme.com
 ```
 
@@ -413,7 +444,7 @@ it makes you type "unprotect my domain" for a reason):
   is deliberate: a suffix match would unprotect every subdomain from one typo.
   List each host explicitly.
 - **Checked before the config check**, so an exception still holds if
-  `PREVIEW_PASSWORD_HASH` is malformed — otherwise the fail-closed 503 would
+  `DEPLOY_GATE_PASSWORD_HASH` is malformed — otherwise the fail-closed 503 would
   take down a domain the operator explicitly marked public.
 - **Bare hostnames only** — `demo.acme.com`, not `https://demo.acme.com/` and
   not an IP literal. A malformed entry is **ignored with a warning** and that
@@ -441,7 +472,7 @@ it makes you type "unprotect my domain" for a reason):
 - **Custom environments don't inherit Preview env vars.** The gate activates on
   custom environments (`VERCEL_TARGET_ENV=staging`), but `vercel env add …
   preview` doesn't reach them — each custom environment is its own scope. Add
-  `PREVIEW_PASSWORD_HASH` (and any bypass tokens) per custom environment, or
+  `DEPLOY_GATE_PASSWORD_HASH` (and any bypass tokens) per custom environment, or
   use "Import variables" when creating it; otherwise that environment sees
   absent config and fails open, silently ungated.
 - **Cookies are per-origin.** The stable branch alias (`*-git-main-*.vercel.app`)
@@ -507,7 +538,7 @@ v1.8.0 (2026-07-17, piaf-web PR #124 review): the gate keys off
 development), so the v1.6/1.7 `VERCEL_ENV` test left custom targets that report
 `VERCEL_ENV=production` ungated; the build-strip likewise now keys off
 `VERCEL_TARGET_ENV` so it strips only TRUE production. Also backported from the
-same review: legacy `PREVIEW_PASSWORD` over the length cap fails closed (Greptile
+same review: legacy `DEPLOY_GATE_PASSWORD` over the length cap fails closed (Greptile
 P1 — otherwise gated with no valid unlock), and the 503 message names both
 misconfiguration causes.
 v1.8.1 (2026-07-17): consistency pass after v1.8.0 — the "Gating production
@@ -536,7 +567,7 @@ documented config surface: dashboard, REST (`passwordProtection`), and Terraform
 expose only `deploymentType` + `password`, with no theming hook — an argument
 from absence, so re-check if Vercel ships customisation.
 v1.10.0 (2026-07-17): **Deployment Protection Exceptions** implemented
-(`PREVIEW_GATE_UNPROTECTED_HOSTS`) in both templates, completing parity with all
+(`DEPLOY_GATE_UNPROTECTED_HOSTS`) in both templates, completing parity with all
 three Advanced Deployment Protection features — previously the skill claimed two
 of three. Matching mirrors Vercel's exception axis (the *domain*): exact host,
 case-insensitive, port-stripped, deliberately **not** suffix/wildcard (a suffix
