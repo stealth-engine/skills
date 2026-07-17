@@ -1,6 +1,7 @@
 /* @deploy-gate:managed — scripts/remove-proxy-on-prod.mjs strips this file
  * from Vercel production builds; keep this marker line if you edit the file.
- * (Point the removal script's targetPath at middleware.ts for this variant.) */
+ * (The removal script scans middleware.ts / src/middleware.ts by marker, so no
+ * edit is needed for this variant.) */
 /**
  * Deployment password gate — FRAMEWORK-AGNOSTIC variant for any project deployed
  * on Vercel (SvelteKit, Nuxt, Astro, Remix, static sites, SPAs, …) via
@@ -453,10 +454,15 @@ export default async function middleware(request: Request) {
 export const config = {
   runtime: "nodejs", // REQUIRED: edge is the default and lacks node:crypto
   matcher: [
-    // Gate everything except framework internals and real static-asset
-    // requests. The extension alternative is $-anchored: without it, any PAGE
-    // whose path merely contains ".js"/".css"/… (e.g. /blog/why.js-rocks)
-    // would silently skip the gate.
-    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|css|js|map|txt|xml|woff2?)$).*)",
+    // Gate every route except real static-asset requests, matched by file
+    // EXTENSION and $-anchored (so a PAGE whose path merely contains ".js" —
+    // e.g. /blog/why.js-rocks — is still gated, not skipped). Framework-neutral
+    // on purpose: hashed build output (SvelteKit /_app, Nuxt /_nuxt, Astro
+    // /_astro, Remix /build, Vite /assets) is *.js / *.css, already covered by
+    // the extension rule — so there are NO Next-specific `_next/*` entries here
+    // (this is the non-Next template). If your framework serves other internal
+    // paths you want public (extensionless data routes, etc.), add them to the
+    // negative lookahead, e.g. "/((?!_nuxt/|__data|favicon.ico|…).*)".
+    "/((?!favicon.ico|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|css|js|mjs|map|txt|xml|woff2?)$).*)",
   ],
 };

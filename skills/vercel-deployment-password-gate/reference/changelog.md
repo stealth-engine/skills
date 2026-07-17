@@ -174,3 +174,18 @@ reopening the leak. The documented local-test flow (VERCEL_TARGET_ENV=preview)
 sets a defined target, so it still gates. Verified: 6 NODE_ENV cases + the
 existing 16 end-to-end gate cases pass. NODE_ENV's exclusion from the System
 Environment Variables list confirmed against Vercel's docs, 2026-07-17.
+
+v1.11.3 (2026-07-17): made the framework-agnostic template genuinely
+framework-neutral. Its `config.matcher` had inherited Next.js's `_next/static` /
+`_next/image` exclusions — dead paths outside Next. Replaced with an
+extension-only static-asset exclusion that covers hashed build output for every
+framework (SvelteKit `/_app`, Nuxt `/_nuxt`, Astro `/_astro`, Remix `/build`,
+Vite `/assets` are all *.js/*.css), $-anchored so a page merely containing ".js"
+in its path is still gated, and with `.json` deliberately NOT excluded so a
+locked deployment doesn't serve data files. Verified `config.matcher`, `next()`
+from `@vercel/functions`, root `middleware.ts`, and `runtime: "nodejs"` are the
+correct Routing Middleware conventions for non-Next frameworks against Vercel's
+Routing Middleware + API docs (2026-07-01). Also fixed a stale docblock comment
+referencing the removal script's old `targetPath` (it now scans candidate paths
+by marker). Matcher behavior smoke-tested over 10 paths; both templates typecheck
+clean.

@@ -4,7 +4,7 @@ description: "A free DIY reimplementation of Vercel's $150/mo Advanced Deploymen
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "1.11.2"
+  version: "1.11.3"
 ---
 
 # Vercel deployment password gate
