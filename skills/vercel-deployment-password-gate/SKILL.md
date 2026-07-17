@@ -1,13 +1,13 @@
 ---
 name: vercel-deployment-password-gate
-description: "A free DIY reimplementation of Vercel's $150/mo Advanced Deployment Protection add-on — all three of its features: Password Protection, private/production deployments, and Deployment Protection Exceptions (unprotect specific domains) — plus named automation bypass tokens, as a self-contained middleware gate for ANY framework on Vercel (Next.js proxy/middleware, or SvelteKit/Nuxt/Astro/Remix/static sites via framework-agnostic Routing Middleware). Gates PREVIEW deployments by default, production opt-in, with a FULLY BRANDED unlock page (your own HTML/CSS/logo from the middleware — Vercel's password screen has no documented theming hook) and zero prod cost. Use when asked to password-protect or basic-auth a preview/staging URL, avoid or cancel that $150/mo add-on, password-protect on a Hobby plan, brand/white-label a password wall for a client, add a login that \"shows once and stays unlocked\", set or ROTATE the preview password, add/remove bypass tokens for CI or third-party automation (Lighthouse, uptime checks), make one preview domain public while the rest stay locked, protect previews on an app with NO existing middleware, gate a production or pre-launch site with a shared password (coming-soon page, client demo, private internal tool), or decide between a DIY gate and Vercel Authentication (free team SSO)."
+description: "A free DIY reimplementation of Vercel's $150/mo Advanced Deployment Protection add-on — all three features (Password Protection, private/prod deployments, Deployment Protection Exceptions) plus named automation bypass tokens — a middleware gate for ANY framework on Vercel (Next.js proxy, or SvelteKit/Nuxt/Astro/Remix/static via Routing Middleware). Gates previews by default, production opt-in; fully branded unlock page; zero prod cost. Use when asked to password-protect or basic-auth a preview/staging URL, avoid or cancel that add-on, password-protect on a Hobby plan, brand/white-label a password wall, add a login that \"shows once and stays unlocked\", set or ROTATE the password, add/remove bypass tokens for CI or automation (Lighthouse, uptime), make one preview domain public, protect previews on an app with NO existing middleware, gate a production or pre-launch site with a shared password (coming-soon, client demo, internal tool), or choose between a DIY gate and Vercel Authentication (free team SSO)."
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "1.11.0"
+  version: "1.11.1"
 ---
 
-# Vercel preview password gate
+# Vercel deployment password gate
 
 A free, portable password wall for **preview deployments by default** — and for
 **production too, opt-in** (see "Gating production too"). Humans see a brandable
@@ -215,10 +215,18 @@ one env-var boolean in production — no new invocations, no meaningful cost.
 The gate file is the app's real, checked-in `proxy.ts`; a build step strips it
 from production builds only:
 
-1. Copy [`templates/deploy-gate.ts`](./templates/deploy-gate.ts) to the app
-   root as `proxy.ts` (checked in — it IS the middleware; lintable, typecheckable).
+1. Copy [`templates/deploy-gate.ts`](./templates/deploy-gate.ts) to `proxy.ts`
+   **at the same level as your `app`/`pages` directory** — the project root, or
+   **`src/proxy.ts` if the app uses a `src/` directory**. ⚠️ Next only loads the
+   proxy at that level: a root `proxy.ts` in a `src/`-layout app is **silently
+   ignored**, and every preview then deploys **ungated even with the password
+   set** — the worst failure mode, because nothing errors. (It's checked in — it
+   IS the middleware; lintable, typecheckable.)
 2. Copy [`templates/remove-proxy-on-prod.mjs`](./templates/remove-proxy-on-prod.mjs)
-   to `scripts/remove-proxy-on-prod.mjs`.
+   to `scripts/remove-proxy-on-prod.mjs`. It scans the common install paths
+   (`proxy.ts`, `src/proxy.ts`, `middleware.ts`, `src/middleware.ts`) for the
+   managed marker, so a `src/` layout needs no edit; if the gate lives somewhere
+   else, add that path to its `CANDIDATES` array.
 3. Chain it into the build (explicit chaining, **not** an npm `prebuild` hook —
    pnpm skips pre/post scripts by default):
 
@@ -226,27 +234,50 @@ from production builds only:
    // package.json
    "build": "node scripts/remove-proxy-on-prod.mjs && next build"
    ```
+4. **Verify after the first preview deploy** — this catches the silent-ungate
+   class above in one command:
 
-Non-Next frameworks: same steps, but the checked-in file is the root
-`middleware.ts` (the framework-agnostic template) and the removal script's
-`targetPath` constant points at it; chain the script before the framework's
-own build command.
+   ```bash
+   curl -sS -o /dev/null -w '%{http_code}\n' https://<your-preview-url>/
+   # expect 401 (gated). 200 means the proxy isn't running — check its location.
+   ```
+
+Non-Next frameworks: same steps, but the checked-in file is `middleware.ts`
+(root, or `src/middleware.ts`) from the framework-agnostic template; the removal
+script already scans those paths. Chain the script before the framework's own
+build command.
 
 Lifecycle:
 
 | Context | What happens |
 | --- | --- |
-| Local `next dev` / `next build`, non-Vercel hosts, `VERCEL_TARGET_ENV=development` | File runs, gate no-ops. Test the gate locally with `VERCEL_TARGET_ENV=preview DEPLOY_GATE_PASSWORD=test next dev`. |
+| Local `next dev` / `next build`, non-Vercel hosts, `VERCEL_TARGET_ENV=development` | Gate no-ops **when no credentials are set locally** (the normal case — the hash lives in Vercel's env, not your `.env`). Test the gate locally with `VERCEL_TARGET_ENV=preview DEPLOY_GATE_PASSWORD=test next dev`. |
 | Vercel **preview** OR any **custom environment** (e.g. `staging`) build | File ships, gate active (keyed on `VERCEL_TARGET_ENV`). The build-strip only fires on true `production` (`VERCEL_TARGET_ENV`), so custom-env builds keep the proxy. |
-| Vercel **production** build | Script deletes `proxy.ts` before `next build` → the deployment provisions **no middleware function** → zero invocations, zero cost, structurally. |
+| Vercel **production** build | Script deletes the gate file before `next build` → the deployment provisions **no middleware function** → zero invocations, zero cost, structurally. |
+
+> **Enable "System Environment Variables" on the project** (Vercel → Settings →
+> Environment Variables — it's normally on). The gate keys off `VERCEL_TARGET_ENV`;
+> with the toggle **off**, no `VERCEL_*` var reaches the runtime, so the gate can't
+> read the target. It still **fails safe** — a configured preview gates anyway
+> (credentials-present + unknown-env → gate), and production stays open because
+> preview-scoped creds aren't present there — but the build-strip also goes inert
+> (it needs `VERCEL=1`), so production ships the (no-op) middleware and you lose the
+> zero-cost property until the toggle is back on.
+
+> **Local-dev note (changed):** if you `vercel env pull` **preview** vars into
+> `.env.local` (so the hash is present locally), `next dev` now shows the unlock
+> form — credentials-present + no `VERCEL_TARGET_ENV` is treated as "gate, we
+> can't prove we're local". Pull the *development* environment (which has no
+> gate creds) for an ungated local run, or set the password and unlock once.
 
 Safety guards in the removal script: it only deletes a file carrying the
-`@deploy-gate:managed` marker (never hand-written middleware — if the marker is
-missing it warns and leaves the file), and it only acts inside a real Vercel
-TRUE-production build (`VERCEL=1` plus `VERCEL_TARGET_ENV` — falling back to
-`VERCEL_ENV` — equal to `production`), so local builds never mutate the
-working tree and custom-environment builds keep the gate. The file is git-tracked anyway; `git checkout -- proxy.ts`
-restores it if anything ever goes sideways.
+`@deploy-gate:managed` marker (never hand-written middleware — if no marked file
+is found it **warns loudly** and leaves everything, since a silent skip would
+read as "stripped OK"), and it only acts inside a real Vercel TRUE-production
+build (`VERCEL=1` plus `VERCEL_TARGET_ENV` — falling back to `VERCEL_ENV` —
+equal to `production`), so local builds never mutate the working tree and
+custom-environment builds keep the gate. The file is git-tracked anyway;
+`git checkout -- proxy.ts` restores it if anything ever goes sideways.
 
 ## Gating production too (deliberate deviation)
 
@@ -338,7 +369,7 @@ Same flow for first-time setup and rotation — only the hash is ever stored:
 
    ```bash
    node <skill-dir>/templates/hash-password.mjs
-   # Preview password: ‹typed, not echoed to history›
+   # Deploy-gate password: ‹typed, not echoed to history›
    # → s2:<salt>:<scryptHex>
    ```
 
@@ -346,17 +377,22 @@ Same flow for first-time setup and rotation — only the hash is ever stored:
    password in shell history and in `ps` output — use it only for a throwaway
    local test, never for a real password.
 
-3. **Store the hash, scoped to Preview only.** Rotation = remove then re-add
-   (the Vercel CLI has no in-place update). Only the hash leaves the machine:
+3. **Store the hash, scoped to Preview only.** Only the hash leaves the machine:
 
    ```bash
-   vercel env rm DEPLOY_GATE_PASSWORD_HASH preview -y   # skip on first setup
+   # first setup:
    node <skill-dir>/templates/hash-password.mjs | vercel env add DEPLOY_GATE_PASSWORD_HASH preview
+   # rotation — in-place, no gap:
+   node <skill-dir>/templates/hash-password.mjs | vercel env update DEPLOY_GATE_PASSWORD_HASH preview
    ```
 
-   The prompt writes to stderr and the hash to stdout, so the pipe carries only
-   the hash. Pasting the `s2:…` string into the Vercel dashboard is equivalent —
-   the CLI is convenience, not a requirement.
+   Use `vercel env update` to rotate, **not** `rm` then `add`: between an `rm`
+   and the next build the var is absent, and absent config **fails open** — a
+   deployment built in that window ships ungated. The prompt writes to stderr
+   and the hash to stdout, so the pipe carries only the hash. Pasting the `s2:…`
+   string into the Vercel dashboard is equivalent — the CLI is convenience, not
+   a requirement. (The hash is fine stored **sensitive**, Vercel's default —
+   rotation mints a fresh hash and never needs to read the old one back.)
 
    Project uses **custom environments** (e.g. `staging`)? Repeat for each one
    (`… | vercel env add DEPLOY_GATE_PASSWORD_HASH staging`) — custom environments
@@ -382,31 +418,54 @@ which has its own env-var scope; same caveat as the password hash). Use
 (JSON in → JSON out on stdout, human summary + generated token on stderr), the
 agent glues it to `vercel env`:
 
+> ⚠️ **Store this var `--no-sensitive` — the workflow depends on reading it
+> back.** `vercel env add` defaults to **sensitive** for Preview (and the
+> "make it sensitive?" prompt is *skipped* when the value arrives via a pipe, as
+> it does here — so the default applies silently), and sensitive values **can't
+> be pulled or listed afterward**. Add/remove edits the *existing* token map, so
+> a map stored sensitive is unrecoverable: the next edit rebuilds from `{}` and
+> **revokes every other token**. Always pass `--no-sensitive` (the tokens are
+> plaintext by design anyway). If a team policy *enforces* sensitive, keep the
+> token map's source of truth outside Vercel (a secrets manager), or accept
+> rotate-all semantics. A map already stored sensitive can't be salvaged —
+> regenerate all tokens from `{}` and re-point the automation.
+
 1. **Read the current value** (skip on first setup):
 
    ```bash
-   vercel env pull --environment=preview /tmp/preview.env
-   grep '^DEPLOY_GATE_BYPASS_TOKENS=' /tmp/preview.env   # → current JSON
-   rm /tmp/preview.env                                     # don't leave it around
+   vercel env pull --environment=preview /tmp/dg.env
+   grep '^DEPLOY_GATE_BYPASS_TOKENS=' /tmp/dg.env   # KEY="json" — strip the quotes to get raw JSON
+   rm /tmp/dg.env                                    # don't leave it around
    ```
 
-2. **Add / remove / list** (label examples: `ci`, `lighthouse`, `uptime`):
+2. **Edit, capturing the new map in ONE run** (label examples: `ci`,
+   `lighthouse`, `uptime`). Run the helper exactly once and keep its stdout —
+   `add` mints a fresh random token *per invocation*, so running it twice stores
+   a different token than the one you showed the user:
 
    ```bash
-   node <skill-dir>/templates/bypass-tokens.mjs add ci '<current-json-or-empty>'
-   node <skill-dir>/templates/bypass-tokens.mjs remove lighthouse '<current-json>'
-   node <skill-dir>/templates/bypass-tokens.mjs list '<current-json>'
+   NEW="$(node <skill-dir>/templates/bypass-tokens.mjs add ci '<current-json-or-empty>')"
+   # or:  NEW="$(node <skill-dir>/templates/bypass-tokens.mjs remove lighthouse '<current-json>')"
+   node <skill-dir>/templates/bypass-tokens.mjs list '<current-json>'   # read-only, no write-back
    ```
 
-   `add` generates a URL-safe (base64url) token and refuses duplicate labels —
-   rotate by `remove` + `add`. Show the generated token to the user once.
+   `add` writes the new map to stdout and the generated token + summary to
+   stderr; show that token to the user once. It refuses duplicate labels —
+   rotate by `remove` + `add`.
 
-3. **Write back** (remove + re-add, like the password):
+3. **Write back the `$NEW` map you captured in step 2** — pipe that exact JSON,
+   don't re-run the helper (a second `add` would mint a different token):
 
    ```bash
-   vercel env rm DEPLOY_GATE_BYPASS_TOKENS preview -y   # skip on first setup
-   node <skill-dir>/templates/bypass-tokens.mjs add ci '<current>' | vercel env add DEPLOY_GATE_BYPASS_TOKENS preview
+   # first setup:
+   printf '%s' "$NEW" | vercel env add    DEPLOY_GATE_BYPASS_TOKENS preview --no-sensitive
+   # thereafter (in-place, no fail-open gap):
+   printf '%s' "$NEW" | vercel env update DEPLOY_GATE_BYPASS_TOKENS preview --no-sensitive
    ```
+
+   `--no-sensitive` is required so step 1 can read the map back next time (see
+   the warning above). `update` avoids the `rm`→`add` window where the var is
+   absent and the gate fails open.
 
 4. **Usage by automation** (tell the user):
    - Header (CI, Playwright, curl): `x-deploy-gate-bypass: <token>`
@@ -419,6 +478,10 @@ agent glues it to `vercel env`:
 5. **Revocation semantics:** removing a token invalidates its cookies on new
    deployments immediately (cookies are keyed per-token) — but as with the
    password, **already-deployed previews honor the old env until redeployed**.
+   Removing the **last** token on a token-only deployment (no password hash)
+   leaves the var as `{}`, which now **fails closed** (503) rather than
+   publishing — to make such a deployment public, *unset* the var entirely
+   (`vercel env rm DEPLOY_GATE_BYPASS_TOKENS preview --yes`), don't empty it.
 
 ## Unprotect specific domains (Deployment Protection Exceptions)
 
@@ -428,9 +491,11 @@ stable demo URL for a client, a webhook receiver, a domain an external service
 crawls — while every other preview stays locked.
 
 ```bash
-# comma-separated; exact hosts, not patterns
-vercel env add DEPLOY_GATE_UNPROTECTED_HOSTS preview
-# → demo.acme.com, hooks-preview.acme.com
+# comma-separated; exact hosts, not patterns. --no-sensitive so you can read
+# the list back to append to it later (it isn't a secret — it's public hosts).
+printf 'demo.acme.com, hooks-preview.acme.com' \
+  | vercel env add DEPLOY_GATE_UNPROTECTED_HOSTS preview --no-sensitive
+# to append later: pull + edit the list, then `vercel env update … --no-sensitive`
 ```
 
 Semantics, matching Vercel's feature (and its dashboard's deliberate friction —
@@ -512,123 +577,4 @@ it makes you type "unprotect my domain" for a reason):
   ships. On Vercel this works via environment separation; for custom Turborepo
   remote caching, add both to the task's `env` list.
 
-Provenance: Next 16 proxy rename + Node-only runtime verified against the
-official v16 upgrade guide (2026-07); build-time `VERCEL_ENV`/`VERCEL`
-availability and Deployment Protection tiers/bypass methods per Vercel docs,
-same date. Removal-script guard behavior and both helper scripts smoke-tested
-locally (2026-07-17). Password hashing upgraded from salted SHA-256 to scrypt
-after CodeQL flagged `js/insufficient-password-hash` (high) in a real install
-(piaf-web PR #122, 2026-07-17). Round-2 review of the same install (Codex +
-Greptile) added: /api-inclusive matcher guidance, the block/setCookie contract
-(header bypass must not skip the host pipeline), and fail-closed on malformed
-config. v1.6.0 hardening pass (2026-07-17): bypass is now tokens-only
-(password-as-bypass ran scrypt per request — a CPU-DoS amplifier),
-control-character rejection in sanitizeReturnPath (the URL parser strips
-tab/CR/LF, so `from=/%09/evil.com` re-formed into a protocol-relative open
-redirect), pre-ES2021-safe `escapeHtml` (`replace(/…/g)`, not `replaceAll`),
-`$`-anchored static-extension matcher (pages containing ".js" in their name
-were skipping the gate), `cache-control: no-store` on Next-variant redirects,
-256-char password cap (gate + hash script), and prototype-safe label checks in
-bypass-tokens.mjs. Custom-environment fix (2026-07-17, piaf-web PR #124): the
-gate activates for every remote non-production `VERCEL_ENV` — `preview` AND any
-custom environment — instead of `=== "preview"` only, which silently left
-custom environments (e.g. "staging") unprotected; production/development/unset
-still fail open, and the Mode-B build-strip still keys only on `production`.
-v1.7.0 (2026-07-17): added the "Gating production too" section — the deliberate
-three-step deviation (predicate, drop the build-strip, add the Production env
-scope) plus the footgun warning and the speed-bump-not-auth guardrail, so other
-models handle a "protect production" request without deleting the gate in prod.
-v1.8.0 (2026-07-17, piaf-web PR #124 review): the gate keys off
-**`VERCEL_TARGET_ENV`** (fallback `VERCEL_ENV`) — Codex correctly flagged that
-`VERCEL_ENV` never holds a custom-environment name (only production/preview/
-development), so the v1.6/1.7 `VERCEL_ENV` test left custom targets that report
-`VERCEL_ENV=production` ungated; the build-strip likewise now keys off
-`VERCEL_TARGET_ENV` so it strips only TRUE production. Also backported from the
-same review: legacy `DEPLOY_GATE_PASSWORD` over the length cap fails closed (Greptile
-P1 — otherwise gated with no valid unlock), and the 503 message names both
-misconfiguration causes.
-v1.8.1 (2026-07-17): consistency pass after v1.8.0 — the "Gating production
-too" predicate, the removal-script guard description, and the Turborepo
-cache-key gotcha now key off `VERCEL_TARGET_ENV` like the templates (the old
-section still showed the `VERCEL_ENV`-era predicate, which would re-open the
-custom-environment hole); documented that custom environments have their own
-env-var scope (Preview-scoped vars don't reach them — per Vercel's
-environments docs — so set the hash/tokens per custom environment or the gate
-finds absent config there and fails open); the removal script's keep-log now
-prints the resolved target alongside VERCEL_ENV (string only, no behavior
-change). `VERCEL_TARGET_ENV` semantics (carries custom-environment names,
-available at build time AND runtime) verified against Vercel's system
-environment variables reference, 2026-07-17.
-v1.9.0 (2026-07-17): framed the skill as what it is — a free reimplementation of
-Vercel's **Advanced Deployment Protection** add-on — with a feature-by-feature
-parity table, and documented the branded-unlock-page advantage. Facts verified
-against Vercel's Deployment Protection and Password Protection docs, 2026-07-17:
-the add-on is **$150/mo** for Pro ("you pay $150 per month for the add-on"),
-bundles Password Protection + Private Production Deployments + Deployment
-Protection Exceptions, is included on Enterprise, requires a **30-day minimum**
-before cancelling, and Password Protection is "Available on the Enterprise plan,
-or as a paid add-on for Pro plans" — i.e. **not purchasable on Hobby**, where
-this gate is the only password option. The no-branding claim is from the
-documented config surface: dashboard, REST (`passwordProtection`), and Terraform
-expose only `deploymentType` + `password`, with no theming hook — an argument
-from absence, so re-check if Vercel ships customisation.
-v1.10.0 (2026-07-17): **Deployment Protection Exceptions** implemented
-(`DEPLOY_GATE_UNPROTECTED_HOSTS`) in both templates, completing parity with all
-three Advanced Deployment Protection features — previously the skill claimed two
-of three. Matching mirrors Vercel's exception axis (the *domain*): exact host,
-case-insensitive, port-stripped, deliberately **not** suffix/wildcard (a suffix
-match on "acme.com" would unprotect every subdomain from one typo), evaluated
-before the config check so an exception survives a malformed hash, and inert when
-unset so existing installs are unaffected. Definition verified against Vercel's
-Deployment Protection Exceptions docs, 2026-07-17 ("disable Deployment Protection
-… for a list of preview domains") — note this is domain-scoped, which is why the
-path-level `matcher` was never an equivalent. Host-matching logic smoke-tested
-over 15 cases (2026-07-17), including the substring/suffix/prefix-extension
-attacks and missing-Host fail-closed; both templates typecheck clean.
-v1.10.1 (2026-07-17, two independent Fable review agents): **corrected a false
-competitive claim inherited from earlier versions.** The skill said Vercel's
-Protection Bypass for Automation is "ONE secret per project" and that our named
-tokens "improve on" it. Vercel's docs (updated 2026-04-30) say the opposite:
-"You can create **multiple bypass secrets per project** to manage access
-independently for different tools" — each revocable, and theirs *also* clears
-Firewall/bot challenges, which ours can't. Corrected to parity in the
-description, body, and README. Lesson recorded for future edits: **the
-competitor's product changes underneath a comparison claim** — re-verify "better
-than" statements against live docs, never carry them forward. Also fixed same
-pass: Shareable Links are available on Hobby (capped at one per account), not
-"Pro+"; the speed-bump gotcha said "never point it at production", contradicting
-the production-gating the skill now supports (rephrased to "not for real user
-data" — the actual guardrail); the exceptions section now discloses that removing
-a host re-protects only new builds (Vercel's is immediate), that a listed host is
-Vercel-only-safe, and that malformed entries are warned-and-ignored; the Hobby
-"unbuyable" claim is now labelled an inference from the plan listings rather than
-"verified"; "no theming hook" → "no *documented* theming hook" everywhere;
-"the build strips the gate" scoped to Mode B. Code fixes from the same review:
-`normalizeHost` no longer splits IPv6 literals on the first colon (a fail-OPEN
-bug — listing "[2001:db8::1]" collapsed to "[2001" and unprotected every address
-sharing that hextet), trailing-dot FQDNs now match, non-hostname entries (e.g. a
-pasted URL) are warned-and-ignored instead of silently half-parsed, and the
-Host-trust comment no longer argues from attacker capability (a non-sequitur —
-forging Host to reach a *different* deployment is exactly what a gate must stop)
-but from the real reason: Vercel's edge routes on the same Host the middleware
-reads, so the two can't desync. Off Vercel that property doesn't hold and the
-var must not be used — now stated in code and docs. Re-verified: 24 host-matching
-cases pass against code extracted from the template itself.
-v1.11.0 (2026-07-17): renamed the skill (`vercel-preview-password-gate` →
-`vercel-deployment-password-gate`) and every config var to the `DEPLOY_GATE_`
-prefix, because the gate protects production too and the `PREVIEW_` names were
-misleading. All internal identifiers followed: cookie `preview_gate` →
-`deploy_gate`, unlock path `/__preview-unlock` → `/__deploy-unlock`, bypass
-header `x-preview-gate-bypass` → `x-deploy-gate-bypass`, build marker
-`@preview-gate:managed` → `@deploy-gate:managed` (kept in lock-step with the
-removal script that greps for it), log prefix, HMAC cookie context, and the
-legacy-plaintext salt. Back-compat is deliberate and tested: `readGateEnv` reads
-the new env name, falls back to the old one with a one-time deprecation warning,
-and the new name wins if both are set — because absent config fails OPEN, a
-silent rename would have unprotected every deployment on upgrade. The cookie-name
-and HMAC-context change re-prompts already-unlocked users once (harmless); the
-bypass header rename is breaking for automation callers, acceptable pre-publish.
-Verified after the rename: both templates typecheck clean, 7 config-fallback
-cases pass (legacy alias still parses → no fail-open; new name wins; legacy
-plaintext honoured; tokens under both names) and all 24 host-matching cases still
-pass, all against functions extracted from the renamed templates.
+Provenance & changelog: how every non-obvious claim was verified, and the full version history, live in [`reference/changelog.md`](./reference/changelog.md). In brief — Vercel pricing/plan/behavior and Next.js proxy placement are verified against the official docs (2026-07-17); the gate's decision logic, env-var fallback, host-matching, and the removal script are smoke-tested with runnable harnesses; and the security-sensitive changes (scrypt hashing, tokens-only bypass, the two fail-open fixes) each trace to a specific review finding recorded there.

@@ -2,7 +2,7 @@
  * from Vercel production builds; keep this marker line if you edit the file.
  * (Point the removal script's targetPath at middleware.ts for this variant.) */
 /**
- * Preview password gate — FRAMEWORK-AGNOSTIC variant for any project deployed
+ * Deployment password gate — FRAMEWORK-AGNOSTIC variant for any project deployed
  * on Vercel (SvelteKit, Nuxt, Astro, Remix, static sites, SPAs, …) via
  * Vercel Routing Middleware. For Next.js apps prefer deploy-gate.ts.
  *
@@ -295,7 +295,7 @@ function unlockFormHtml(returnPath: string, failed: boolean): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex" />
-<title>Preview — locked</title>
+<title>Locked</title>
 <style>
   :root { color-scheme: light dark; }
   body { min-height: 100dvh; display: grid; place-items: center; margin: 0;
@@ -310,10 +310,10 @@ function unlockFormHtml(returnPath: string, failed: boolean): string {
 </head>
 <body>
 <form method="post" action="${escapeHtml(action)}">
-  <h1>Preview deployment</h1>
+  <h1>This deployment is locked</h1>
   ${failed ? '<p class="err">Wrong password — try again.</p>' : ""}
   <input type="password" name="password" placeholder="Password" autofocus required autocomplete="current-password" />
-  <button type="submit">Unlock preview</button>
+  <button type="submit">Unlock</button>
 </form>
 </body>
 </html>`;
@@ -401,7 +401,7 @@ export async function previewGate(request: Request): Promise<GateResult> {
   if (!config) {
     return {
       action: "block",
-      response: new Response("Preview locked — automation bypass required.", {
+      response: new Response("Locked — automation bypass required.", {
         status: 401,
         headers: { "cache-control": "no-store" },
       }),

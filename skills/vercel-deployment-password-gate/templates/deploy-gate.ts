@@ -1,7 +1,7 @@
 /* @deploy-gate:managed — scripts/remove-proxy-on-prod.mjs strips this file
  * from Vercel production builds; keep this marker line if you edit the file. */
 /**
- * Preview password gate for Vercel deployments — portable, dependency-free.
+ * Deployment password gate for Vercel —  — portable, dependency-free.
  *
  * Mode B (app has no other middleware): check this file in AS `proxy.ts` at
  * the app root. Lifecycle:
@@ -307,7 +307,7 @@ function unlockFormHtml(returnPath: string, failed: boolean): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex" />
-<title>Preview — locked</title>
+<title>Locked</title>
 <style>
   :root { color-scheme: light dark; }
   body { min-height: 100dvh; display: grid; place-items: center; margin: 0;
@@ -322,10 +322,10 @@ function unlockFormHtml(returnPath: string, failed: boolean): string {
 </head>
 <body>
 <form method="post" action="${escapeHtml(action)}">
-  <h1>Preview deployment</h1>
+  <h1>This deployment is locked</h1>
   ${failed ? '<p class="err">Wrong password — try again.</p>' : ""}
   <input type="password" name="password" placeholder="Password" autofocus required autocomplete="current-password" />
-  <button type="submit">Unlock preview</button>
+  <button type="submit">Unlock</button>
 </form>
 </body>
 </html>`;
@@ -428,7 +428,7 @@ export async function previewGate(
   // Token-only configuration has no password to prompt for.
   if (!config) {
     return {
-      block: new NextResponse("Preview locked — automation bypass required.", {
+      block: new NextResponse("Locked — automation bypass required.", {
         status: 401,
         headers: { "cache-control": "no-store" },
       }),
