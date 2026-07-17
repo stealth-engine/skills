@@ -1,4 +1,4 @@
-/* @preview-gate:managed — scripts/remove-proxy-on-prod.mjs strips this file
+/* @deploy-gate:managed — scripts/remove-proxy-on-prod.mjs strips this file
  * from Vercel production builds; keep this marker line if you edit the file. */
 /**
  * Preview password gate for Vercel deployments — portable, dependency-free.
@@ -11,7 +11,7 @@
  *   - Vercel production: remove-proxy-on-prod.mjs deletes the file at build
  *     time → the deployment ships no middleware function at all
  *
- * Mode A (app already has middleware/proxy): place at lib/preview-gate.ts,
+ * Mode A (app already has middleware/proxy): place at lib/deploy-gate.ts,
  * call `previewGate(request)` first inside the existing function, and do NOT
  * use the removal script.
  *
@@ -21,7 +21,7 @@
  * Automation auth (mimics Vercel's Protection Bypass for Automation):
  * DEPLOY_GATE_BYPASS_TOKENS holds JSON `{"<label>":"<token>", ...}` — manage
  * with templates/bypass-tokens.mjs. Send a token via the
- * `x-preview-gate-bypass` header or query parameter. Tokens are plaintext by
+ * `x-deploy-gate-bypass` header or query parameter. Tokens are plaintext by
  * design: automation must read them back. Bypass accepts TOKENS ONLY — the
  * human password unlocks solely via the form (see matchBypass for why).
  *
@@ -36,9 +36,9 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createHmac, scryptSync, timingSafeEqual } from "node:crypto";
 
-const COOKIE_NAME = "preview_gate";
-const UNLOCK_PATH = "/__preview-unlock";
-const BYPASS_PARAM = "x-preview-gate-bypass"; // header and query parameter share this name
+const COOKIE_NAME = "deploy_gate";
+const UNLOCK_PATH = "/__deploy-unlock";
+const BYPASS_PARAM = "x-deploy-gate-bypass"; // header and query parameter share this name
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year — "unlock once"
 // Bounds the scrypt input on unlock POSTs (its PBKDF2 pre-hash scales with
 // input length). hash-password.mjs enforces the same cap — keep them in sync.
@@ -91,7 +91,7 @@ function readGateEnv(name: keyof typeof LEGACY_ENV_NAMES | string): string | und
   if (legacy !== undefined && !warnedLegacy.has(legacyName)) {
     warnedLegacy.add(legacyName);
     console.warn(
-      `[preview-gate] ${legacyName} is deprecated — rename it to ${name}. Still honoured, but rename before the old name is dropped.`,
+      `[deploy-gate] ${legacyName} is deprecated — rename it to ${name}. Still honoured, but rename before the old name is dropped.`,
     );
   }
   return legacy;
@@ -102,7 +102,7 @@ function loadGateConfig(): GateConfigState {
   if (stored) {
     const match = /^s2:([0-9a-f]+):([0-9a-f]{64})$/i.exec(stored);
     if (match) return { salt: match[1], hash: match[2].toLowerCase() };
-    console.warn("[preview-gate] DEPLOY_GATE_PASSWORD_HASH is malformed — failing closed");
+    console.warn("[deploy-gate] DEPLOY_GATE_PASSWORD_HASH is malformed — failing closed");
     return "malformed";
   }
   // Legacy fallback: plaintext env var (DEPLOY_GATE_PASSWORD / PREVIEW_PASSWORD), normalized to the same scheme.
@@ -112,12 +112,12 @@ function loadGateConfig(): GateConfigState {
     // would otherwise hash into a valid config the POST guard always rejects,
     // leaving the deployment gated with no way in. Fail closed instead.
     if (plain.length > MAX_PASSWORD_LENGTH) {
-      console.warn("[preview-gate] DEPLOY_GATE_PASSWORD exceeds the max length — failing closed");
+      console.warn("[deploy-gate] DEPLOY_GATE_PASSWORD exceeds the max length — failing closed");
       return "malformed";
     }
     return {
-      salt: "preview-gate-legacy",
-      hash: hashPassword("preview-gate-legacy", plain),
+      salt: "deploy-gate-legacy",
+      hash: hashPassword("deploy-gate-legacy", plain),
     };
   }
   return null;
@@ -138,7 +138,7 @@ function bypassTokens(): BypassTokens {
   } catch {
     // fall through to the warning
   }
-  console.warn("[preview-gate] DEPLOY_GATE_BYPASS_TOKENS is malformed JSON — ignoring");
+  console.warn("[deploy-gate] DEPLOY_GATE_BYPASS_TOKENS is malformed JSON — ignoring");
   return {};
 }
 
@@ -163,7 +163,7 @@ function unprotectedHosts(): string[] {
     const host = normalizeHost(entry);
     if (!HOSTNAME_PATTERN.test(host)) {
       console.warn(
-        `[preview-gate] DEPLOY_GATE_UNPROTECTED_HOSTS: ignoring ${JSON.stringify(entry.trim())} — expected a bare hostname like "demo.acme.com" (no scheme, path, or IP literal). That domain stays GATED.`,
+        `[deploy-gate] DEPLOY_GATE_UNPROTECTED_HOSTS: ignoring ${JSON.stringify(entry.trim())} — expected a bare hostname like "demo.acme.com" (no scheme, path, or IP literal). That domain stays GATED.`,
       );
       continue;
     }
@@ -211,7 +211,7 @@ function hashPassword(salt: string, password: string): string {
 // plaintext bypass tokens, so it cannot widen the trust boundary. Keying
 // per-credential is what buys instant revocation on rotation.
 function mintCookie(key: string, purpose: "unlocked" | "bypass"): string {
-  return createHmac("sha256", key).update(`preview-gate:${purpose}:v1`).digest("hex");
+  return createHmac("sha256", key).update(`deploy-gate:${purpose}:v1`).digest("hex");
 }
 
 function validCookieValues(config: GateConfig | null, tokens: BypassTokens): string[] {

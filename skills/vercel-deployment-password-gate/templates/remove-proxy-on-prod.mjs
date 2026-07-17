@@ -7,7 +7,7 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 
-const MARKER = "@preview-gate:managed";
+const MARKER = "@deploy-gate:managed";
 const targetPath = resolve(process.cwd(), "proxy.ts"); // adjust if using src/ or middleware.ts
 
 const isVercelBuild = process.env.VERCEL === "1";
@@ -18,13 +18,13 @@ const isProduction = target === "production";
 
 if (!isVercelBuild || !isProduction) {
   console.log(
-    `[preview-gate] keeping proxy.ts (VERCEL=${process.env.VERCEL ?? "unset"}, target=${target ?? "unset"}, VERCEL_ENV=${process.env.VERCEL_ENV ?? "unset"})`,
+    `[deploy-gate] keeping proxy.ts (VERCEL=${process.env.VERCEL ?? "unset"}, target=${target ?? "unset"}, VERCEL_ENV=${process.env.VERCEL_ENV ?? "unset"})`,
   );
   process.exit(0);
 }
 
 if (!existsSync(targetPath)) {
-  console.log("[preview-gate] no proxy.ts present — nothing to remove");
+  console.log("[deploy-gate] no proxy.ts present — nothing to remove");
   process.exit(0);
 }
 
@@ -32,12 +32,12 @@ if (!existsSync(targetPath)) {
 // custom proxy (Mode A), drop this script from the build chain instead.
 if (!readFileSync(targetPath, "utf8").includes(MARKER)) {
   console.warn(
-    "[preview-gate] proxy.ts lacks the @preview-gate:managed marker — leaving it in place. Production will ship this middleware.",
+    "[deploy-gate] proxy.ts lacks the @deploy-gate:managed marker — leaving it in place. Production will ship this middleware.",
   );
   process.exit(0);
 }
 
 rmSync(targetPath);
 console.log(
-  "[preview-gate] removed proxy.ts — production build ships no middleware",
+  "[deploy-gate] removed proxy.ts — production build ships no middleware",
 );

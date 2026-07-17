@@ -99,8 +99,8 @@ Two templates, identical behavior, env vars, and helper scripts — pick by fram
 
 | Project | Template | Installs as |
 | --- | --- | --- |
-| **Next.js** | [`templates/preview-gate.ts`](./templates/preview-gate.ts) — no deps beyond `next/server` + `node:crypto` | `proxy.ts` (Mode B) or `lib/preview-gate.ts` (Mode A) |
-| **Anything else on Vercel** (SvelteKit, Nuxt, Astro, Remix, static/SPA) | [`templates/preview-gate.vercel.ts`](./templates/preview-gate.vercel.ts) — uses Vercel Routing Middleware; one dep (`@vercel/functions`); `config.runtime` must stay `"nodejs"` (edge is the default and lacks `node:crypto`) | root `middleware.ts`, next to `package.json` |
+| **Next.js** | [`templates/deploy-gate.ts`](./templates/deploy-gate.ts) — no deps beyond `next/server` + `node:crypto` | `proxy.ts` (Mode B) or `lib/deploy-gate.ts` (Mode A) |
+| **Anything else on Vercel** (SvelteKit, Nuxt, Astro, Remix, static/SPA) | [`templates/deploy-gate.vercel.ts`](./templates/deploy-gate.vercel.ts) — uses Vercel Routing Middleware; one dep (`@vercel/functions`); `config.runtime` must stay `"nodejs"` (edge is the default and lacks `node:crypto`) | root `middleware.ts`, next to `package.json` |
 
 The skill's mechanics (`VERCEL_TARGET_ENV` gating, env-var management via
 `vercel env`, build-time strip) are Vercel-platform-wide, not framework-specific.
@@ -118,14 +118,14 @@ Single self-contained file:
   `VERCEL_TARGET_ENV` carries the custom name. It **fails open** only when that
   value is `production`, `development`, or unset (local / non-Vercel).
 - No valid cookie → responds `401` with an inline HTML password form (no extra
-  routes/pages added to the app). Form POSTs to `/__preview-unlock`.
+  routes/pages added to the app). Form POSTs to `/__deploy-unlock`.
 - **Human auth:** `DEPLOY_GATE_PASSWORD_HASH` stores `s2:<salt>:<scryptHex>` (scrypt, memory-hard)
   — **never the plaintext**. Submitted passwords are run through scrypt and compared
   constant-time. (Legacy fallback: a plaintext `DEPLOY_GATE_PASSWORD` also works.)
 - **Automation auth (mimics Vercel's Protection Bypass for Automation):**
   `DEPLOY_GATE_BYPASS_TOKENS` stores JSON `{"<label>":"<token>", ...}` —
   plaintext **by design** (automation must read tokens back; they're generated
-  random, never human-reused). Send a token via the `x-preview-gate-bypass`
+  random, never human-reused). Send a token via the `x-deploy-gate-bypass`
   **header** (passes through + sets the cookie) or **query parameter** (303
   redirect to the cleaned URL — token stripped from the address bar — with the
   cookie set, so one crafted link = click-once access for a service that can't
@@ -181,13 +181,13 @@ one env-var boolean in production — no new invocations, no meaningful cost.
 > gate 500s every request. Caught in a real install (piaf-web, Next 16.2.7,
 > 2026-07-17): `Error: Failed to load external module node:crypto`.
 
-1. Copy [`templates/preview-gate.ts`](./templates/preview-gate.ts) to
-   `lib/preview-gate.ts`.
+1. Copy [`templates/deploy-gate.ts`](./templates/deploy-gate.ts) to
+   `lib/deploy-gate.ts`.
 2. Wire it into the existing `proxy()` / `middleware()` function — check first,
    attach the cookie to whatever response the pipeline produces last:
 
    ```ts
-   import { previewGate, withUnlockCookie } from "./lib/preview-gate";
+   import { previewGate, withUnlockCookie } from "./lib/deploy-gate";
 
    export async function proxy(request: NextRequest) {
      const gate = await previewGate(request);
@@ -203,7 +203,7 @@ one env-var boolean in production — no new invocations, no meaningful cost.
    returning a bare pass-through from the gate would skip all of it (caught by
    review on the piaf-web install).
 
-3. Check the host matcher: it must not exclude `/__preview-unlock`, and if it
+3. Check the host matcher: it must not exclude `/__deploy-unlock`, and if it
    excludes `/api` (piaf-web's did), decide deliberately — un-gated API routes
    on previews are usually a hole. Include `/api` in the matcher and skip only
    the host's page-routing logic for API paths.
@@ -215,7 +215,7 @@ one env-var boolean in production — no new invocations, no meaningful cost.
 The gate file is the app's real, checked-in `proxy.ts`; a build step strips it
 from production builds only:
 
-1. Copy [`templates/preview-gate.ts`](./templates/preview-gate.ts) to the app
+1. Copy [`templates/deploy-gate.ts`](./templates/deploy-gate.ts) to the app
    root as `proxy.ts` (checked in — it IS the middleware; lintable, typecheckable).
 2. Copy [`templates/remove-proxy-on-prod.mjs`](./templates/remove-proxy-on-prod.mjs)
    to `scripts/remove-proxy-on-prod.mjs`.
@@ -241,7 +241,7 @@ Lifecycle:
 | Vercel **production** build | Script deletes `proxy.ts` before `next build` → the deployment provisions **no middleware function** → zero invocations, zero cost, structurally. |
 
 Safety guards in the removal script: it only deletes a file carrying the
-`@preview-gate:managed` marker (never hand-written middleware — if the marker is
+`@deploy-gate:managed` marker (never hand-written middleware — if the marker is
 missing it warns and leaves the file), and it only acts inside a real Vercel
 TRUE-production build (`VERCEL=1` plus `VERCEL_TARGET_ENV` — falling back to
 `VERCEL_ENV` — equal to `production`), so local builds never mutate the
@@ -409,9 +409,9 @@ agent glues it to `vercel env`:
    ```
 
 4. **Usage by automation** (tell the user):
-   - Header (CI, Playwright, curl): `x-preview-gate-bypass: <token>`
+   - Header (CI, Playwright, curl): `x-deploy-gate-bypass: <token>`
    - Query param (services that can't set headers; also human click-once
-     links): `https://<preview-url>/path?x-preview-gate-bypass=<token>` — the
+     links): `https://<preview-url>/path?x-deploy-gate-bypass=<token>` — the
      gate 303s to the cleaned URL and sets the cookie.
    - Mimic Vercel's `VERCEL_AUTOMATION_BYPASS_SECRET` convention: designate one
      token (e.g. `ci`) and store it as a CI secret named
@@ -478,6 +478,12 @@ it makes you type "unprotect my domain" for a reason):
 - **Cookies are per-origin.** The stable branch alias (`*-git-main-*.vercel.app`)
   unlocks once, permanently — but every PR's unique preview URL prompts once per
   browser. Expected behavior, warn stakeholders.
+- **Upgrading from an older install re-prompts once.** The cookie name changed
+  (`preview_gate` → `deploy_gate`) and the unlock HMAC context changed with it,
+  so anyone currently unlocked will see the form one more time after you deploy
+  this version. Harmless, one-time. (The bypass header also changed:
+  `x-preview-gate-bypass` → `x-deploy-gate-bypass` — update any automation that
+  sends it. The old header is not accepted.)
 - **Query-param tokens can land in logs** (server/proxy access logs capture the
   first request even though the gate strips the URL afterward) — same caveat
   Vercel documents for its own bypass query param. Prefer the header where the
@@ -494,7 +500,7 @@ it makes you type "unprotect my domain" for a reason):
   production too") but only for low-stakes surfaces — a coming-soon page, a
   client demo, an internal tool. If the thing behind the wall would be a breach,
   use Vercel Authentication, Clerk, or a real IdP. The expensive scrypt check runs only on
-  explicit form POSTs to `/__preview-unlock` (input capped at 256 chars);
+  explicit form POSTs to `/__deploy-unlock` (input capped at 256 chars);
   every per-request check — cookie, bypass tokens — is a cheap constant-time
   compare, so the gate itself is not a CPU amplifier.
 - **`formData()` in the proxy** consumes the request body — fine here because a
@@ -608,3 +614,21 @@ but from the real reason: Vercel's edge routes on the same Host the middleware
 reads, so the two can't desync. Off Vercel that property doesn't hold and the
 var must not be used — now stated in code and docs. Re-verified: 24 host-matching
 cases pass against code extracted from the template itself.
+v1.11.0 (2026-07-17): renamed the skill (`vercel-preview-password-gate` →
+`vercel-deployment-password-gate`) and every config var to the `DEPLOY_GATE_`
+prefix, because the gate protects production too and the `PREVIEW_` names were
+misleading. All internal identifiers followed: cookie `preview_gate` →
+`deploy_gate`, unlock path `/__preview-unlock` → `/__deploy-unlock`, bypass
+header `x-preview-gate-bypass` → `x-deploy-gate-bypass`, build marker
+`@preview-gate:managed` → `@deploy-gate:managed` (kept in lock-step with the
+removal script that greps for it), log prefix, HMAC cookie context, and the
+legacy-plaintext salt. Back-compat is deliberate and tested: `readGateEnv` reads
+the new env name, falls back to the old one with a one-time deprecation warning,
+and the new name wins if both are set — because absent config fails OPEN, a
+silent rename would have unprotected every deployment on upgrade. The cookie-name
+and HMAC-context change re-prompts already-unlocked users once (harmless); the
+bypass header rename is breaking for automation callers, acceptable pre-publish.
+Verified after the rename: both templates typecheck clean, 7 config-fallback
+cases pass (legacy alias still parses → no fail-open; new name wins; legacy
+plaintext honoured; tokens under both names) and all 24 host-matching cases still
+pass, all against functions extracted from the renamed templates.

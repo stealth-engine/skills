@@ -1,5 +1,5 @@
 // Hashes a plaintext gate password into the DEPLOY_GATE_PASSWORD_HASH format
-// (`s2:<salt>:<scryptHex>`) used by preview-gate.ts. scrypt (memory-hard KDF),
+// (`s2:<salt>:<scryptHex>`) used by deploy-gate.ts. scrypt (memory-hard KDF),
 // not plain SHA-256 — CodeQL js/insufficient-password-hash flagged the earlier
 // salted-SHA-256 scheme in a real install (2026-07-17).
 // Usage:
