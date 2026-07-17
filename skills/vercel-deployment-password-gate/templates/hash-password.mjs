@@ -39,9 +39,21 @@ if (fromArgv !== undefined) {
   console.log(hash(fromArgv));
 } else {
   const rl = createInterface({ input: process.stdin, output: process.stderr });
-  rl.question("Preview password: ", (password) => {
+  const isTty = rl.terminal;
+  rl.question("Deploy-gate password: ", (password) => {
     rl.close();
+    // In a TTY the muted _writeToOutput also swallowed the Enter keypress —
+    // print the newline so the shell prompt lands on its own line.
+    if (isTty) process.stderr.write("\n");
     assertUsable(password);
     console.log(hash(password));
   });
+  // Mute echo AFTER question() has painted the prompt (getpass-style). In a
+  // TTY, readline does its own keystroke echo; blanking _writeToOutput keeps
+  // the typed password off the screen and out of screen recordings. Piped
+  // (non-TTY) input isn't echoed anyway, so this is a no-op there.
+  // `_writeToOutput` is an underscore-internal but decade-stable Node API — the
+  // standard no-deps recipe; if a future Node breaks it, the password would
+  // echo (visible-but-still-not-logged), not fail.
+  if (isTty) rl._writeToOutput = () => {};
 }
