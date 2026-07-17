@@ -73,7 +73,15 @@ function readGateEnv(name: keyof typeof LEGACY_ENV_NAMES | string): string | und
 }
 
 function loadGateConfig(): GateConfigState {
-  const stored = readGateEnv("DEPLOY_GATE_PASSWORD_HASH")?.trim();
+  const rawHash = readGateEnv("DEPLOY_GATE_PASSWORD_HASH");
+  const stored = rawHash?.trim();
+  // Present but blank (empty / whitespace) → the operator TRIED to configure it
+  // (a failed secret write, a blank dashboard value). Fail closed — do NOT fall
+  // through to "unconfigured → open".
+  if (rawHash !== undefined && stored === "") {
+    console.warn("[deploy-gate] DEPLOY_GATE_PASSWORD_HASH is set but blank — failing closed");
+    return "malformed";
+  }
   if (stored) {
     const match = /^s2:([0-9a-f]+):([0-9a-f]{64})$/i.exec(stored);
     if (match) return { salt: match[1], hash: match[2].toLowerCase() };
@@ -81,6 +89,10 @@ function loadGateConfig(): GateConfigState {
     return "malformed";
   }
   const plain = readGateEnv("DEPLOY_GATE_PASSWORD");
+  if (plain !== undefined && plain.trim() === "") {
+    console.warn("[deploy-gate] DEPLOY_GATE_PASSWORD is set but blank — failing closed");
+    return "malformed";
+  }
   if (plain) {
     // Enforce the unlock-POST length cap here too: an over-long legacy password
     // would otherwise hash into a valid config the POST guard always rejects,
@@ -105,23 +117,28 @@ function loadGateConfig(): GateConfigState {
 type BypassTokenState = { map: BypassTokens; absent: boolean; malformed: boolean };
 
 function bypassTokens(): BypassTokenState {
-  const raw = readGateEnv("DEPLOY_GATE_BYPASS_TOKENS")?.trim();
-  if (!raw) return { map: {}, absent: true, malformed: false };
+  const rawVar = readGateEnv("DEPLOY_GATE_BYPASS_TOKENS");
+  if (rawVar === undefined) return { map: {}, absent: true, malformed: false };
+  const raw = rawVar.trim();
   const map: BypassTokens = {};
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      for (const [label, token] of Object.entries(parsed as Record<string, unknown>)) {
-        if (typeof token === "string" && token.length > 0) map[label] = token;
+  if (raw !== "") {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        for (const [label, token] of Object.entries(parsed as Record<string, unknown>)) {
+          if (typeof token === "string" && token.length > 0) map[label] = token;
+        }
       }
+    } catch {
+      // leave map empty → malformed below
     }
-  } catch {
-    // leave map empty → malformed below
   }
+  // Present (even if blank) but no usable tokens → misconfigured. Same reasoning
+  // as a blank hash: the var is set, so the operator intended protection.
   const malformed = Object.keys(map).length === 0;
   if (malformed) {
     console.warn(
-      "[deploy-gate] DEPLOY_GATE_BYPASS_TOKENS is set but yielded no usable tokens (bad JSON, not an object, or empty) — treating as misconfigured",
+      "[deploy-gate] DEPLOY_GATE_BYPASS_TOKENS is set but yielded no usable tokens (blank, bad JSON, not an object, or empty) — treating as misconfigured",
     );
   }
   return { map, absent: false, malformed };

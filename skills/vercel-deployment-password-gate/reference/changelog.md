@@ -189,3 +189,25 @@ Routing Middleware + API docs (2026-07-01). Also fixed a stale docblock comment
 referencing the removal script's old `targetPath` (it now scans candidate paths
 by marker). Matcher behavior smoke-tested over 10 paths; both templates typecheck
 clean.
+
+v1.11.4 (2026-07-17, PR #24 round-3 Codex findings on the latest commits):
+- **Blank configured secret failed open (P2).** A present-but-empty
+  DEPLOY_GATE_PASSWORD_HASH="" (or whitespace, or a blank DEPLOY_GATE_PASSWORD)
+  trimmed to falsy and fell through as if the var were absent → fail open. Now
+  present-but-blank returns "malformed" (503), matching the malformed-hash
+  contract; bypassTokens does the same for a blank token var. Fresh-clone
+  (var unset) still fails open. Verified: 7 blank-secret cases + the 16-case
+  e2e suite pass.
+- **Production-gating recipe leaked on undefined (P2).** The "Gating production
+  too" predicate snippet still passed on a bare `target === undefined`, which is
+  the System-Env-disabled Vercel case — following it for a coming-soon prod site
+  would leave it public. Updated the snippet to the stock local-dev guard
+  (`undefined && NODE_ENV === "development"`).
+- **Non-Next Routing Middleware must be at repo root (P1 doc).** The Mode B note
+  said the framework-agnostic file could live at `src/middleware.ts`; Vercel only
+  loads Routing Middleware from the project root (beside package.json), so a src/
+  copy is silently ignored → ungated preview. Corrected to root-only; the `src/`
+  guidance is Next `proxy.ts`-only. Verified against Vercel Routing Middleware
+  API docs (2026-07-01).
+Re-confirmed the Greptile re-posts on the latest commit are already-handled: F1
+(bypass cookie) rejected-safe, F2 (prompt echo) fixed, F3 (strip target) fixed.

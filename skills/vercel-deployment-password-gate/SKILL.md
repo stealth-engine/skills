@@ -4,7 +4,7 @@ description: "A free DIY reimplementation of Vercel's $150/mo Advanced Deploymen
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "1.11.3"
+  version: "1.11.4"
 ---
 
 # Vercel deployment password gate
@@ -243,9 +243,13 @@ from production builds only:
    ```
 
 Non-Next frameworks: same steps, but the checked-in file is `middleware.ts`
-(root, or `src/middleware.ts`) from the framework-agnostic template; the removal
-script already scans those paths. Chain the script before the framework's own
-build command.
+**at the project root only** (next to `package.json`) from the framework-agnostic
+template. Unlike Next's `proxy.ts`, Vercel Routing Middleware is **only** loaded
+from the repo root — a `src/middleware.ts` copy is silently ignored and the
+preview deploys ungated, so do NOT put it under `src/` even in a src-layout app
+(the `src/*` guidance above is Next-only). The removal script still scans the
+`src/` paths defensively, but don't rely on that. Chain the script before the
+framework's own build command.
 
 Lifecycle:
 
@@ -299,16 +303,21 @@ bump, not a lock.
 **If it's a legitimate low-stakes case, make these three changes together:**
 
 1. **Predicate — also gate production.** In `previewGate`, drop the
-   `production` arm from the pass-through condition. Keep the same
-   `VERCEL_TARGET_ENV ?? VERCEL_ENV` resolution as the stock predicate (testing
-   `VERCEL_ENV` alone re-opens the custom-environment hole), and keep
-   `development` and unset failing open so local dev and non-Vercel hosts stay
-   ungated:
+   `production` arm from the pass-through condition, but **keep the stock
+   local-dev guard exactly** — do NOT pass on a bare `target === undefined`.
+   A real Vercel deployment with System Environment Variables disabled also
+   reports `undefined`, so passing on it would leave your production site
+   public. Only a genuine local dev server (`NODE_ENV === "development"`) or a
+   fully-unconfigured deployment should fall through:
 
    ```ts
-   // gate production too — only local dev / non-Vercel fall through
    const target = process.env.VERCEL_TARGET_ENV ?? process.env.VERCEL_ENV;
-   if (target === undefined || target === "development") return {}; // or { action: "pass" }
+   // gate production too — pass ONLY for the local dev server; `undefined`
+   // alone is NOT safe (a System-Env-disabled Vercel deploy reads undefined).
+   if (target === "development") return {}; // or { action: "pass" }
+   if (target === undefined && process.env.NODE_ENV === "development") return {};
+   // …then fall through to the stock config/credentials checks, which fail open
+   // only when nothing is configured.
    ```
 
 2. **Mode B ONLY — do NOT wire `remove-proxy-on-prod.mjs`.** ⚠️ This is the
