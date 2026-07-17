@@ -477,13 +477,15 @@ export const config = {
   matcher: [
     // Gate every route except real static-asset requests, matched by file
     // EXTENSION and $-anchored (so a PAGE whose path merely contains ".js" —
-    // e.g. /blog/why.js-rocks — is still gated, not skipped). Framework-neutral
-    // on purpose: hashed build output (SvelteKit /_app, Nuxt /_nuxt, Astro
-    // /_astro, Remix /build, Vite /assets) is *.js / *.css, already covered by
-    // the extension rule — so there are NO Next-specific `_next/*` entries here
-    // (this is the non-Next template). If your framework serves other internal
-    // paths you want public (extensionless data routes, etc.), add them to the
-    // negative lookahead, e.g. "/((?!_nuxt/|__data|favicon.ico|…).*)".
-    "/((?!favicon.ico|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|css|js|mjs|map|woff2?)$).*)",
+    // e.g. /blog/why.js-rocks — is still gated, not skipped). The exact-file
+    // exceptions are likewise `\.`-escaped and $-anchored: an UNanchored
+    // `robots.txt` would prefix-match a page like /robots.txt/secret (or, with
+    // the dot unescaped, /robotsXtxt) and leak it. Framework-neutral on purpose:
+    // hashed build output (SvelteKit /_app, Nuxt /_nuxt, Astro /_astro, Remix
+    // /build, Vite /assets) is *.js / *.css, already covered by the extension
+    // rule — so there are NO Next-specific `_next/*` entries here (this is the
+    // non-Next template). To make other internal paths public, add an anchored
+    // entry to the negative lookahead (e.g. `_nuxt/` for a directory prefix).
+    "/((?!favicon\\.ico$|robots\\.txt$|sitemap\\.xml$|.*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|css|js|mjs|map|woff2?)$).*)",
   ],
 };

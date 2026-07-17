@@ -511,7 +511,10 @@ export const config = {
     // Gate everything except Next internals and real static-asset requests.
     // The extension alternative is $-anchored: without it, any PAGE whose
     // path merely contains ".js"/".css"/… (e.g. /blog/why.js-rocks) would
-    // silently skip the gate.
-    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|css|js|map|woff2?)$).*)",
+    // silently skip the gate. The exact-file exceptions are `\.`-escaped and
+    // $-anchored too, so an unanchored `robots.txt` can't prefix-match a page
+    // like /robots.txt/secret and leak it. (`_next/static|_next/image` stay
+    // directory PREFIXES — that namespace is Next-reserved, no page lives there.)
+    "/((?!_next/static|_next/image|favicon\\.ico$|robots\\.txt$|sitemap\\.xml$|.*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|css|js|map|woff2?)$).*)",
   ],
 };

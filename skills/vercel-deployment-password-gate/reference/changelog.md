@@ -237,3 +237,14 @@ v1.11.5 (2026-07-17, PR #24 round-4 — CodeRabbit / Codex / Copilot on the late
   (`next({ headers })` sets response headers, verified against @vercel/functions).
 Verified: 16 e2e + 7 blank-secret + 6 NODE_ENV gate cases pass; matcher and cookie
 behavior smoke-tested; both templates typecheck clean.
+
+v1.11.6 (2026-07-17, PR #24 — Codex re-review of the round-4 matcher change):
+**Anchored the exact-file matcher exclusions.** `favicon.ico|robots.txt|sitemap.xml`
+were unanchored prefixes with unescaped dots, so a page like `/sitemap.xml-preview`,
+`/robots.txt/secret`, or `/robotsXtxt` prefix-matched a metadata-file exemption and
+deployed PUBLIC. Now `\.`-escaped and `$`-anchored in both matchers, so only the real
+files stay public and lookalike pages gate. (`_next/static|_next/image` stay directory
+prefixes — that namespace is Next-reserved.) Verified: the fix gates the 4 bypass
+variants and keeps the 3 real metadata files public, tested against the regex extracted
+from the template; 16 e2e + 7 blank-secret + 6 NODE_ENV gate cases still pass; both
+templates typecheck.
