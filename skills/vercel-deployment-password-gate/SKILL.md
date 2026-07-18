@@ -4,7 +4,7 @@ description: "A free DIY reimplementation of Vercel's $150/mo Advanced Deploymen
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "1.11.10"
+  version: "1.11.11"
 ---
 
 # Vercel deployment password gate
@@ -208,7 +208,12 @@ docs use for this codemod, or rename the file
      // THESE cleaned headers into your pipeline — don't reuse the raw `request`.
      const headers = new Headers(request.headers);
      headers.delete("x-deploy-gate-bypass");
-     const cleaned = new NextRequest(request.nextUrl, { headers, method: request.method, body: request.body });
+     const cleaned = new NextRequest(request.nextUrl, {
+       headers,
+       method: request.method,
+       body: request.body,
+       duplex: "half", // required whenever a (stream) body is forwarded, else POSTs throw
+     });
 
      const response = await yourExistingLogic(cleaned);
      const secure = request.nextUrl.protocol === "https:";

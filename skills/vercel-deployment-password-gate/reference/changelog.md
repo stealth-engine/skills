@@ -321,3 +321,10 @@ stops leaking edge cases.
   getting its latest transforms. Kept `@canary`.
 Verified: the declared-blank host var now 503s (was a leak); full regression — 8
 exception-config + 16 e2e + 7 blank + 6 NODE_ENV — all pass; both templates typecheck.
+
+v1.11.11 (2026-07-18, PR #24 — CodeRabbit Major on the Mode A sample):
+The Mode A example that reconstructs a NextRequest to strip the bypass header
+passed `body: request.body` (a stream) without `duplex: "half"` — which throws
+`RequestInit: duplex option is required when sending a body` on any request with
+a body (POST/PUT). Added `duplex: "half"` (verified it's required for a stream
+body and harmless with a null body / GET). Doc-only.
