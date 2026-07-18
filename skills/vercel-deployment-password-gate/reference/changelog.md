@@ -294,3 +294,30 @@ in previewGate). Verified: 8 exception-config cases (listed→pass, non-listed�
 +password→normal, fresh-clone still fails open, toggle-off→503) plus the full
 regression — 16 e2e + 7 blank + 6 NODE_ENV + 24 host — all pass; both templates
 typecheck.
+
+v1.11.10 (2026-07-18, PR #24 — the config-state matrix, closed):
+Final consolidated pass over the CodeRabbit/Codex findings so the fail-open matrix
+stops leaking edge cases.
+- **CodeRabbit Major (verified fail-open):** a DECLARED-but-blank/all-invalid
+  DEPLOY_GATE_UNPROTECTED_HOSTS (e.g. `""` or a typo'd host) with no password/token
+  was indistinguishable from unset and failed OPEN. Now "declared" = the var is set
+  at all (`process.env.… !== undefined`), which — like a blank hash/token — counts
+  as configured: it suppresses the fail-open, so a declared-blank list fails CLOSED
+  (503) for non-exception hosts. Unset (a real fresh clone) still fails open.
+- **Codex P2 (bearer secret):** documented that the stored hash is itself a bearer
+  secret — the unlock cookie is HMAC(key=hash, fixed message), so a leaked
+  DEPLOY_GATE_PASSWORD_HASH forges access without the plaintext; rotate on any hash
+  disclosure, not just a plaintext leak. scrypt protects the plaintext, not access.
+- **Codex P2 (Mode A sample):** the Mode A example showed stripping the bypass
+  header into an unused variable but passed the raw request to the host logic —
+  misleading. Now it builds a cleaned NextRequest and passes that, with a note for
+  request-less host pipelines.
+- **CodeRabbit Minor (matcher dot):** the documented gate-everything example used
+  `favicon\.ico` (single backslash) — in a JS string that collapses to an
+  UNESCAPED regex dot. Fixed to `favicon\\.ico` so the emitted regex escapes it,
+  matching the template code.
+- **Rejected — CodeRabbit "pin the codemod version":** `@canary` is what Next's
+  official proxy docs use; pinning a one-time codemod to an exact version defeats
+  getting its latest transforms. Kept `@canary`.
+Verified: the declared-blank host var now 503s (was a leak); full regression — 8
+exception-config + 16 e2e + 7 blank + 6 NODE_ENV — all pass; both templates typecheck.

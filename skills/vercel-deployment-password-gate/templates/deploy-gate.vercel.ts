@@ -380,6 +380,11 @@ export async function previewGate(request: Request): Promise<GateResult> {
   const configState = gateConfig();
   const tokens = bypassTokens();
   const hosts = unprotectedHosts();
+  // "Declared" = the var is SET (even blank / all-invalid), which — like a blank
+  // hash or token map — signals intent to protect. `hosts.length` alone can't
+  // tell a declared-but-blank list from an unset one, and conflating them would
+  // let a typo'd exception list reach the fail-open below.
+  const hostsDeclared = process.env.DEPLOY_GATE_UNPROTECTED_HOSTS !== undefined;
 
   // Fully unconfigured → fail open (fresh clone, or non-Vercel with no gate
   // env). This — NOT a blanket `target === undefined` pass — is what keeps CI
@@ -388,7 +393,7 @@ export async function previewGate(request: Request): Promise<GateResult> {
   // credentials ARE present, we fall through and gate rather than leak. A
   // declared host-exception list COUNTS as configured (it means "these hosts
   // public, the REST gated"), so it too suppresses the fail-open.
-  if (configState === null && tokens.absent && hosts.length === 0) return { action: "pass" };
+  if (configState === null && tokens.absent && !hostsDeclared) return { action: "pass" };
 
   // Deployment Protection Exceptions equivalent: an explicitly listed host is
   // public. Honored BEFORE the malformed 503 so an exception survives a bad

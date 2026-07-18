@@ -4,7 +4,7 @@ description: "A free DIY reimplementation of Vercel's $150/mo Advanced Deploymen
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "1.11.9"
+  version: "1.11.10"
 ---
 
 # Vercel deployment password gate
@@ -203,15 +203,22 @@ docs use for this codemod, or rename the file
      const gate = await previewGate(request);
      if (gate.block) return gate.block;
 
-     // If you use header-bypass automation, strip the token from the headers
-     // your app sees (Mode B's proxy.ts does this for you; in Mode A it's yours
-     // to do). Build the response from these cleaned headers, e.g.
-     //   const h = new Headers(request.headers); h.delete("x-deploy-gate-bypass");
-     const response = await yourExistingLogic(request);
+     // Strip the bypass token from the headers forwarded upstream, so your app /
+     // request logging never sees it (Mode B's proxy.ts does this for you). Pass
+     // THESE cleaned headers into your pipeline — don't reuse the raw `request`.
+     const headers = new Headers(request.headers);
+     headers.delete("x-deploy-gate-bypass");
+     const cleaned = new NextRequest(request.nextUrl, { headers, method: request.method, body: request.body });
+
+     const response = await yourExistingLogic(cleaned);
      const secure = request.nextUrl.protocol === "https:";
      return gate.setCookie ? withUnlockCookie(response, gate.setCookie, secure) : response;
    }
    ```
+
+   (If your host logic doesn't take a request argument — it reads globals or
+   `NextResponse.next()`s — set the cleaned headers on the continue-response
+   instead: `NextResponse.next({ request: { headers } })`.)
 
    The `setCookie` path matters: a header-bypassed request must CONTINUE
    through the host pipeline (i18n redirects, rewrites, analytics cookies) —
@@ -436,8 +443,15 @@ Same flow for first-time setup and rotation — only the hash is ever stored:
    - **Already-deployed previews keep honoring the old password until each is
      redeployed** — Vercel env changes apply to new builds only. Redeploy the
      stable staging alias if immediate revocation matters.
-   - A leaked env var exposes only a scrypt hash (memory-hard to brute-force) — acceptable for a speed
-     bump, but tell users not to reuse a real password.
+   - **The stored hash is itself a bearer secret — treat a leak like a leaked
+     password.** The unlock cookie is `HMAC(key = the hash, "deploy-gate:unlocked:v1")`,
+     a fixed public message, so anyone who obtains `DEPLOY_GATE_PASSWORD_HASH`
+     (a copied dashboard value, a CI log) can forge a valid cookie **without**
+     ever recovering the plaintext — scrypt's memory-hardness only protects the
+     *plaintext*, not access. So keep the hash out of logs, and **rotate it** on
+     any suspected disclosure, not just a plaintext leak. (Fine for a speed bump;
+     just don't reuse a real password, and don't treat the hash as safe to
+     expose.)
 
 ## Manage automation bypass tokens (agent workflow)
 
@@ -575,7 +589,7 @@ it makes you type "unprotect my domain" for a reason):
   into the hashed JS bundle**, and with the default matcher anyone who learns an
   asset URL can fetch that material **without the password** — the gate only
   protects the HTML shell. If your bundles carry anything sensitive, **gate
-  everything**: set the matcher to `"/((?!favicon\.ico$).*)"` (only the tab icon
+  everything**: set the matcher to `"/((?!favicon\\.ico$).*)"` (only the tab icon
   stays public) and inline the unlock page's logo as a data URI (a same-origin
   logo would otherwise be gated). It costs one cheap cookie-compare per asset
   request (scrypt runs only on the unlock POST), and in Mode B production still
