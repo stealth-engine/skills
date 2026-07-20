@@ -208,8 +208,8 @@ the point and **stop looping** rather than auto-proceeding.
 
 **You're in diminishing returns when the *pattern*, not any single finding, shows it:**
 
-- **Severity is trending down** round over round (Major → minor → trivial). The real
-  issues are out; what's left is polish.
+- **Severity is trending down** round over round (High → Medium → Low, in the
+  status-table vocabulary). The real issues are out; what's left is polish.
 - **The loop generates instead of converging:** a fix push draws a *new* finding of
   equal-or-lower severity, often in the *same code you just touched*. The fix is
   creating review surface, not closing it. When an addition of yours keeps attracting
@@ -234,6 +234,13 @@ rather than deciding to keep spending on their behalf.
 substance when all required checks pass (or the only red is non-actionable — e.g. a
 billing-capped bot) **and** no *open finding of real severity* remains, where real =
 correctness, security, or a documented requirement, not niche/style/theoretical.
+
+**This exit is *earlier*, not *lighter* — it still honours the convergence gates.**
+All required checks must pass, **every expected reviewer must have reported on the
+current HEAD**, and **every open finding still needs a terminal verdict**: give the
+remaining niche/trivial ones `Kept (with reason): diminishing returns` in the status
+table before you pause. What changes here is only that you stop *generating new
+rounds* — you do not skip a gate, self-merge, or leave findings dangling.
 
 **When you hit diminishing returns, stop — do not start another round:**
 
@@ -279,7 +286,10 @@ mode this prevents — it burns budget and, past the real issues, improves nothi
 - [ ] **Didn't over-loop.** If findings hit diminishing returns (severity trending
       down, the loop generating more than it closes, budget accruing) you **stopped**,
       declared merge-ready on substance, and **paused** with a recommendation instead
-      of auto-starting another round — see "Stop at diminishing returns".
+      of auto-starting another round — see "Stop at diminishing returns". This exit
+      still satisfies the two items above: reviewers reported on HEAD, and the
+      remaining findings each got a terminal verdict (`Kept (with reason): diminishing
+      returns`).
 
 ## See also
 
