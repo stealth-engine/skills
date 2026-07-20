@@ -1,10 +1,10 @@
 ---
 name: autonomous-pr-driver
-description: "Autonomously drive a pull request to merge-ready — opening or attaching to it, then resolving automated code review (triage findings, fix the valid, reject the invalid, push, repeat until green) and pinging a human to merge. Use when asked to 'drive / ship / land this PR', 'get the PR green', 'resolve the PR review comments', 'address the CodeRabbit / Cursor / Bugbot / Codex findings', 'fix the code review and push', or to loop on PR reviews until checks pass."
+description: "Autonomously drive a pull request to merge-ready — opening or attaching to it, then resolving automated code review (triage findings, fix the valid, reject the invalid, push, loop) and pinging a human to merge. Knows when to STOP: at diminishing returns (niche/trivial/contradictory findings, severity trending down, or review budget accruing) it declares the PR good-to-merge on substance and pauses rather than auto-looping to chase a bot to zero comments — resuming only if the user insists or a genuinely important finding appears. Use when asked to 'drive / ship / land this PR', 'get the PR green', 'resolve the PR review comments', 'address the CodeRabbit / Cursor / Bugbot / Codex findings', 'fix the code review and push', 'stop over-fixing / merge it', or to loop on PR reviews until checks pass."
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "1.4.0"
+  version: "1.5.0"
 ---
 
 # Autonomous PR driver
@@ -60,6 +60,12 @@ cadence + @-tag behaviour snapshot).
      re-posts and rejected/"wontfix" items don't block; **don't chase
      non-deterministic bots to zero comments** — they re-post regardless.
 
+   There is a **second, earlier exit**: converged *on substance* while findings have
+   hit **diminishing returns** (see "Stop at diminishing returns"). When the loop is
+   generating niche/trivial/contradictory findings faster than it closes real ones,
+   stop, hand off with a merge recommendation, and **pause** — don't keep looping just
+   to satisfy a reviewer that will always find one more thing.
+
    A green PR can still be **un-mergeable**: if it's behind base or
    `mergeable=CONFLICTING` (`mergeStateStatus` `BEHIND`/`DIRTY`), update/rebase it per
    the **resolve-merge-conflicts** skill (`../resolve-merge-conflicts/SKILL.md` if
@@ -68,7 +74,10 @@ cadence + @-tag behaviour snapshot).
    re-converge: checks and bot reviews still reflect the pre-update commit; never hand
    off on stale-commit green.
 5. **Hand off.** **Ping the human to merge — never self-merge by default.**
-   Auto-merge (squash) **only** if the task/goal explicitly authorised it.
+   Auto-merge (squash) **only** if the task/goal explicitly authorised it. If you
+   stopped at **diminishing returns** (not zero-findings), say so: state it's good to
+   merge on substance, give the evidence + recommendation, and **pause the loop**
+   until the user decides — don't auto-start another round.
 
 ## Triage every finding → valid / invalid / stale
 
@@ -188,6 +197,62 @@ The ideal shape of a whole PR is: initial review → **one** batched fix push �
 final re-review → hand off. Materially more review round-trips than that usually means
 fixes went out before the round was fully triaged.
 
+## Stop at diminishing returns — hand off, don't loop the cost up
+
+Convergence is not only "zero valid findings left." A per-push reviewer can keep
+finding *something* every round, and each fix push you make to satisfy it spends
+another metered review run. Past a point, looping **costs more than it returns** and
+can trend the PR the wrong way — each fix adds surface the next round picks at. The
+default is "loop until green"; this is the **exception that overrides it**. Recognise
+the point and **stop looping** rather than auto-proceeding.
+
+**You're in diminishing returns when the *pattern*, not any single finding, shows it:**
+
+- **Severity is trending down** round over round (Major → minor → trivial). The real
+  issues are out; what's left is polish.
+- **The loop generates instead of converging:** a fix push draws a *new* finding of
+  equal-or-lower severity, often in the *same code you just touched*. The fix is
+  creating review surface, not closing it. When an addition of yours keeps attracting
+  findings, the better move is usually to **simplify or drop that addition**, not
+  patch it a third time.
+- **Findings no longer change real-world behaviour, safety, or a documented
+  requirement** — they're wording, style, or edge cases unlikely in real use, or they
+  would harden the artifact past what its own framing asks for (a thing the code calls
+  a "speed bump" being reviewed like a vault).
+- **A finding contradicts an authoritative source** (official docs, the language
+  spec). The reviewer is now less reliable than the source you can check yourself.
+- **Review budget is visibly accruing** — you're nearing or have already hit an
+  allowance / billing cap (a real signal we've tripped in practice).
+
+This is **not** "ignore low-severity findings." A finding *labelled* minor can still be
+a real fail-open or a factual error — fix that one. The stop signal is the **trend**:
+importance falling while the round count climbs. Judge on real-world impact, and be
+honest that it's a judgement call — which is exactly why you hand the call to the user
+rather than deciding to keep spending on their behalf.
+
+**Separate "merge-ready on substance" from "green."** The PR is merge-ready on
+substance when all required checks pass (or the only red is non-actionable — e.g. a
+billing-capped bot) **and** no *open finding of real severity* remains, where real =
+correctness, security, or a documented requirement, not niche/style/theoretical.
+
+**When you hit diminishing returns, stop — do not start another round:**
+
+1. **Stop pushing.** Each push re-triggers metered review; containing that is the point.
+2. **Tell the user plainly** (answer-first): the PR is **good to merge on substance**.
+   Then name the diminishing-returns signal with concrete evidence — the severity
+   trend, the specific niche/contradictory findings — and give your merge
+   recommendation.
+3. **Hand off and pause.** Do the normal hand-off (ping to merge, never self-merge),
+   and **say explicitly that you're pausing the auto-loop** instead of looping again.
+4. **Resume only on new information:** the user tells you to continue, **or** a
+   genuinely important finding later appears (a real fail-open, a broken build, a
+   factual error). A niche re-post is not new information — record it stale/kept and
+   stay paused.
+
+Converged on substance + diminishing returns ⇒ **hand off with a recommendation, not
+another round.** Chasing a non-deterministic reviewer to zero comments is the failure
+mode this prevents — it burns budget and, past the real issues, improves nothing.
+
 ## Safety (non-negotiable)
 
 - **Fork / untrusted PRs:** the checkout is attacker-controlled and the token is
@@ -211,6 +276,10 @@ fixes went out before the round was fully triaged.
 - [ ] Posted the final **status table** (one row per finding — verdict + note, per
       "Fixing & pushing") and **pinged the human to merge** (or auto-merged only if
       explicitly authorised).
+- [ ] **Didn't over-loop.** If findings hit diminishing returns (severity trending
+      down, the loop generating more than it closes, budget accruing) you **stopped**,
+      declared merge-ready on substance, and **paused** with a recommendation instead
+      of auto-starting another round — see "Stop at diminishing returns".
 
 ## See also
 
