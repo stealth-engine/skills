@@ -293,8 +293,13 @@ jobs:
                   # -f/-F parameter is present, and this endpoint is GET-only. Without
                   # it every call fails and the fail-closed path silently skips every
                   # candidate — the sweep would delete nothing at all.
+                  # time_period is passed EXPLICITLY. Empirically the default already
+                  # returns far more than a day (a ref whose last push was 45 days ago
+                  # is still returned), but depending on an unspecified default for a
+                  # guard that authorises deletion is fragile — pin the window.
                   last_push="$(gh api --method GET "repos/${REPO}/activity" \
-                                 -f ref="refs/heads/${name}" -F per_page=30 \
+                                 -f ref="refs/heads/${name}" -f time_period=year \
+                                 -F per_page=100 \
                                  --jq '[.[] | select(.activity_type == "push" or .activity_type == "force_push")
                                         | .timestamp] | sort | last // empty' 2>/dev/null)"; act_rc=$?
                   set -e
@@ -307,6 +312,13 @@ jobs:
                      && [ "$(date -u -d "$last_push" +%s)" -gt "$closed_ts" ]; then
                     skipped=$((skipped+1))
                     note "| \`$name\` | skipped — ref pushed after the last PR closed |"
+                    continue
+                  fi
+                  # If the closure predates the queried window, push history cannot
+                  # cover the gap — don't pretend it did. Fail closed.
+                  if [ "$closed_ts" -lt "$(( now - 31536000 ))" ]; then
+                    skipped=$((skipped+1))
+                    note "| \`$name\` | ⛔ skipped — PR closed over a year ago, outside the push-history window (failing closed) |"
                     continue
                   fi
 
