@@ -284,10 +284,13 @@ jobs:
                 if [ "$last_closed" != "-" ]; then
                   closed_ts=$(date -u -d "$last_closed" +%s)
 
-                  # (i) REAL push time. `committedDate` is author-controlled — a
-                  # force-push to an older commit, or a backdated committer date,
+                  # (i) REAL ref-movement time. `committedDate` is author-controlled —
+                  # a force-push to an older commit, or a backdated committer date,
                   # leaves it earlier than the closure even though the ref moved.
-                  # The activity API records actual push/force_push timestamps.
+                  # branch_creation is included because a deleted-then-recreated branch
+                  # can have NO push activity at all (verified: refs exist with
+                  # types=branch_creation,branch_deletion only). Excluding it would let
+                  # an intentionally recreated branch be deleted.
                   set +e
                   # --method GET is REQUIRED: `gh api` defaults to POST as soon as any
                   # -f/-F parameter is present, and this endpoint is GET-only. Without
@@ -300,7 +303,9 @@ jobs:
                   last_push="$(gh api --method GET "repos/${REPO}/activity" \
                                  -f ref="refs/heads/${name}" -f time_period=year \
                                  -F per_page=100 \
-                                 --jq '[.[] | select(.activity_type == "push" or .activity_type == "force_push")
+                                 --jq '[.[] | select(.activity_type == "push"
+                                                    or .activity_type == "force_push"
+                                                    or .activity_type == "branch_creation")
                                         | .timestamp] | sort | last // empty' 2>/dev/null)"; act_rc=$?
                   set -e
                   if [ $act_rc -ne 0 ]; then

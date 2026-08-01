@@ -270,10 +270,12 @@ jobs:
                 echo "DRY-RUN would delete ${uid} (${ref}) ${url}"
                 continue
               fi
-              # TOCTOU: /tmp/live_refs.txt was built once, but deletes are paced at
-              # ${INTERVAL}s each, so the snapshot ages as the sweep runs. Re-verify
-              # this ref is still absent immediately before destroying its deployment.
-              if [ "$MODE" = sweep ] && [ -n "$ref" ] && [ "$ref" != "-" ]; then
+              # TOCTOU: the live-ref snapshot (sweep) and the up-front branch checks
+              # (branch mode) both age while listing and pacing run — deletes are
+              # ${INTERVAL}s apart, so a long run spans minutes. Re-verify immediately
+              # before destroying each deployment, in BOTH modes: branch mode is not
+              # exempt just because it checked once at the start.
+              if [ -n "$ref" ] && [ "$ref" != "-" ]; then
                 enc_ref="$(printf '%s' "$ref" | sed 's/%/%25/g; s/#/%23/g')"
                 set +e
                 recheck="$(gh api "repos/${REPO}/branches/${enc_ref}" 2>&1)"; recheck_rc=$?
