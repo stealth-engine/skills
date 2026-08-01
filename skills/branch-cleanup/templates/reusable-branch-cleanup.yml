@@ -196,7 +196,11 @@ jobs:
 
           # ---------- EVENT PATH: one branch, from a closed-unmerged PR ----------
           if [ -n "$BRANCH" ]; then
-            if is_protected "$BRANCH"; then
+            if [ -z "$HEAD_SHA" ]; then
+              # Refuse rather than delete with the tip-freshness guard disabled.
+              skipped=$((skipped+1))
+              note "| \`$BRANCH\` | ⛔ skipped — no close-time \`head_sha\` supplied (failing closed) |"
+            elif is_protected "$BRANCH"; then
               skipped=$((skipped+1)); note "| \`$BRANCH\` | skipped — protected |"
             else
               # Re-query LIVE PR state; never trust the webhook payload. It is a
@@ -277,11 +281,39 @@ jobs:
                 # closure, someone resumed work without opening a new PR — deleting
                 # would discard it. This is the sweep's equivalent of the event path's
                 # tip-SHA guard, which otherwise only protects the closed-PR route.
-                if [ "$last_closed" != "-" ] && [ "$committed" != "-" ] \
-                   && [ "$(date -u -d "$committed" +%s)" -gt "$(date -u -d "$last_closed" +%s)" ]; then
-                  skipped=$((skipped+1))
-                  note "| \`$name\` | skipped — commits pushed after the last PR closed |"
-                  continue
+                if [ "$last_closed" != "-" ]; then
+                  closed_ts=$(date -u -d "$last_closed" +%s)
+
+                  # (i) REAL push time. `committedDate` is author-controlled — a
+                  # force-push to an older commit, or a backdated committer date,
+                  # leaves it earlier than the closure even though the ref moved.
+                  # The activity API records actual push/force_push timestamps.
+                  set +e
+                  last_push="$(gh api "repos/${REPO}/activity" \
+                                 -f ref="refs/heads/${name}" -F per_page=30 \
+                                 --jq '[.[] | select(.activity_type == "push" or .activity_type == "force_push")
+                                        | .timestamp] | sort | last // empty' 2>/dev/null)"; act_rc=$?
+                  set -e
+                  if [ $act_rc -ne 0 ]; then
+                    skipped=$((skipped+1))
+                    note "| \`$name\` | ⛔ skipped — push-history lookup failed, cannot prove no post-closure work (failing closed) |"
+                    continue
+                  fi
+                  if [ -n "$last_push" ] \
+                     && [ "$(date -u -d "$last_push" +%s)" -gt "$closed_ts" ]; then
+                    skipped=$((skipped+1))
+                    note "| \`$name\` | skipped — ref pushed after the last PR closed |"
+                    continue
+                  fi
+
+                  # (ii) committedDate as a secondary signal only. Either indicator
+                  # firing is enough to keep the branch.
+                  if [ "$committed" != "-" ] \
+                     && [ "$(date -u -d "$committed" +%s)" -gt "$closed_ts" ]; then
+                    skipped=$((skipped+1))
+                    note "| \`$name\` | skipped — commits dated after the last PR closed |"
+                    continue
+                  fi
                 fi
                 if [ "${GRACE_MIN:-0}" -gt 0 ] && [ "$last_closed" != "-" ]; then
                   age_m=$(( (now - $(date -u -d "$last_closed" +%s)) / 60 ))

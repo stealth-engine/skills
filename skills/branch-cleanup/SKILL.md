@@ -101,10 +101,17 @@ Beyond the base-PR guard:
   because 422 is overloaded. A `gh ruleset check` pre-flight is **not** a reliable
   predictor: it reports configured rules and ignores the caller's bypass.
 - **Branches that advanced after the decision are preserved.** Every deletion re-reads
-  the tip and refuses if it moved. The event path compares against
-  `github.event.pull_request.head.sha` — the **close-time** SHA from the webhook. It
-  must not use the PR's `headRefOid`: that **tracks the branch even after closure**, so
-  comparing it to the live tip can never differ (verified against the GitHub API).
+  the tip and refuses if it moved. Two traps this navigates, both verified against the
+  API rather than assumed:
+  - The event path compares against `github.event.pull_request.head.sha` — the
+    **close-time** SHA from the webhook — and **refuses to delete if that input is
+    missing**. It must *not* use the PR's `headRefOid`: that **tracks the branch even
+    after closure**, so comparing it to the live tip can never differ.
+  - The sweep uses the **repository activity API** for a real `push`/`force_push`
+    timestamp. `committedDate` is **author-controlled** and proves nothing about when a
+    ref moved — a force-push to an older commit leaves it earlier than the PR closure.
+    The commit date is kept only as a secondary signal; either firing keeps the branch,
+    and a failed push-history lookup fails closed.
 - **Sweep is report-only by default** — it lists what it would delete; deleting requires
   `sweep_delete: true`.
 
