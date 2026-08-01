@@ -28,9 +28,12 @@
     request is a metered review; a final-pass fix makes a new final HEAD that gets its
     own request). For rows whose cadence is
     **on-open-only or inconsistent**, only use a re-trigger command **explicitly documented
-    for that bot** (e.g. Codex's `@codex review`) — don't assume one exists, and don't block
-    on it if it doesn't re-post. Never re-trigger-tag **auto-per-push**
-    rows; they re-review themselves and the tag only spawns a redundant pass.
+    for that bot** (e.g. Codex's `@codex review`) — don't assume one exists. If it doesn't
+    re-post, don't wait forever — but don't silently hand off either: this doesn't waive
+    the final-HEAD sign-off gate, so either get a fresh report on HEAD **or** decide its
+    sign-off isn't required and **record that in the summary** (per the convergence
+    checklist). Never re-trigger-tag **auto-per-push** rows; they re-review themselves and
+    the tag only spawns a redundant pass.
   - **Don't tag / stop tagging**: "learns = **No**" rows (noise), and — escalation
     guard — any bot that starts treating your replies as fresh work, adding noise each
     round: stop tagging it entirely and just record its findings resolved/stale.
