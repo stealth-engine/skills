@@ -109,7 +109,7 @@ officially documented. The scheduled sweep is what covers the first case.
 
 ## Rolling out across many repos
 
-- **Pin the reusable workflow to a tag or SHA, not `@main`** — it holds `contents: write`.
+- **Pin the reusable workflow to a full commit SHA** — it holds `contents: write`.
 - **Substitute your own org** for `stealth-engine` in the caller's `uses:`.
 - Start with `sweep_delete: false` (the default) and read a few reports before enabling
   deletion — the sweep is the path that touches branches nobody explicitly closed.
@@ -120,8 +120,8 @@ officially documented. The scheduled sweep is what covers the first case.
    **once** in the org's `.github` repo. Do not copy it per repo.
 2. Add [`templates/caller-branch-cleanup.yml`](./templates/caller-branch-cleanup.yml) to
    each repo (~30 lines). **Replace `YOUR-ORG`** and keep the
-   `uses:` pinned — the template ships `@v1`, so tag the hosting repo `v1` (or pin a
-   commit SHA). It forwards a delete-capable token; `@main` would let any change there
+   `uses:` pinned to a **full commit SHA** (the template ships an obvious
+   placeholder so it cannot silently run unpinned; a tag is mutable and can be moved). It forwards a delete-capable token; `@main` would let any change there
    take effect across every repo at once.
 3. Enable `delete_branch_on_merge` (above).
 4. **Private repos:** on the *hosting* repo set **Settings → Actions → General → Access**

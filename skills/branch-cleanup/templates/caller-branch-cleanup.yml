@@ -1,6 +1,7 @@
 # Per-repo caller.
 #
-# ⚠️ BEFORE USE: replace YOUR-ORG, and pin `uses:` to an immutable tag or commit SHA.
+# ⚠️ BEFORE USE: replace YOUR-ORG and REPLACE-WITH-FULL-COMMIT-SHA. Pin to a FULL
+# COMMIT SHA — a tag is mutable and can be moved to point at different code.
 # This workflow forwards a delete-capable token to a workflow in another repo — with
 # `@main`, any change there (or a compromise of it) takes effect everywhere instantly.
 #
@@ -39,7 +40,7 @@ jobs:
       github.event_name == 'pull_request' &&
       github.event.pull_request.merged == false &&
       github.event.pull_request.head.repo.full_name == github.repository
-    uses: YOUR-ORG/.github/.github/workflows/reusable-branch-cleanup.yml@v1  # PIN: tag or SHA, never @main
+    uses: YOUR-ORG/.github/.github/workflows/reusable-branch-cleanup.yml@REPLACE-WITH-FULL-COMMIT-SHA  # a tag is MUTABLE — only a full SHA is immutable
     with:
       branch: ${{ github.event.pull_request.head.ref }}
       dry_run: false
@@ -50,7 +51,7 @@ jobs:
 
   sweep:
     if: github.event_name != 'pull_request'
-    uses: YOUR-ORG/.github/.github/workflows/reusable-branch-cleanup.yml@v1  # PIN: tag or SHA, never @main
+    uses: YOUR-ORG/.github/.github/workflows/reusable-branch-cleanup.yml@REPLACE-WITH-FULL-COMMIT-SHA  # a tag is MUTABLE — only a full SHA is immutable
     with:
       branch: ''              # empty = orphan sweep
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}

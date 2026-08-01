@@ -177,11 +177,26 @@ jobs:
                   note "| \`$BRANCH\` | deferred to sweep — closed ${age}m ago, grace ${GRACE_MIN}m |"
                 else
                   # Did the branch move after the PR closed? If so someone pushed new
-                  # work post-closure and deleting would discard it.
+                  # work post-closure and deleting would discard it. Every failure
+                  # path here FAILS CLOSED — `|| echo ""` would turn a rate limit into
+                  # "no new commits" and delete the work it exists to protect.
                   pr_sha="$(jq -r '.headRefOid // empty' <<<"$state")"
-                  cur_sha="$(gh api "repos/${REPO}/git/ref/heads/${BRANCH}" \
-                               --jq '.object.sha' 2>/dev/null || echo "")"
-                  if [ -n "$pr_sha" ] && [ -n "$cur_sha" ] && [ "$pr_sha" != "$cur_sha" ]; then
+                  enc_b="$(printf '%s' "$BRANCH" | sed 's/%/%25/g; s/#/%23/g')"
+                  set +e
+                  tip="$(gh api "repos/${REPO}/git/ref/heads/${enc_b}" --jq '.object.sha' 2>&1)"; tip_rc=$?
+                  set -e
+                  if [ "$tip_rc" -ne 0 ]; then
+                    case "$tip" in
+                      *"Not Found"*)   # ref already gone — nothing to do
+                        deleted=$((deleted+1)); note "| \`$BRANCH\` | already gone (success) |" ;;
+                      *)
+                        skipped=$((skipped+1))
+                        note "| \`$BRANCH\` | ⛔ skipped — tip lookup failed, cannot prove no new commits (failing closed) |" ;;
+                    esac
+                  elif [ -z "$pr_sha" ]; then
+                    skipped=$((skipped+1))
+                    note "| \`$BRANCH\` | ⛔ skipped — PR head SHA unknown, cannot compare (failing closed) |"
+                  elif [ "$pr_sha" != "$tip" ]; then
                     skipped=$((skipped+1))
                     note "| \`$BRANCH\` | skipped — new commits pushed after the PR closed |"
                   else

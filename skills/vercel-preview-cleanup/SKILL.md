@@ -103,8 +103,8 @@ to notice a filter that's excluding everything, though it does not list every ke
    **once** in the org's `.github` repo. Do not copy it per repo.
 2. Add [`templates/caller-vercel-preview-cleanup.yml`](./templates/caller-vercel-preview-cleanup.yml)
    to each repo's default branch (~30 lines). **Replace `YOUR-ORG`** and keep the
-   `uses:` pinned — the template ships `@v1`, so tag the hosting repo `v1` (or pin a
-   commit SHA). It forwards a delete-capable token; `@main` would let any change there
+   `uses:` pinned to a **full commit SHA** (the template ships an obvious
+   placeholder so it cannot silently run unpinned; a tag is mutable and can be moved). It forwards a delete-capable token; `@main` would let any change there
    take effect across every repo at once.
 3. Set per-repo `vars.VERCEL_PROJECT_IDS` (comma-separated — a monorepo maps one git repo
    to several Vercel projects) and `vars.VERCEL_TEAM_ID`; set `secrets.VERCEL_TOKEN`.
@@ -150,9 +150,9 @@ instantly. Two honest caveats:
    previews persist until Vercel's retention reaps them. Widening the pattern to catch
    them would also expose your own flat trunks — not a trade worth making.
 
-## Rolling out across many repos## Rolling out across many repos
+## Rolling out across many repos
 
-- **Pin the reusable workflow to a tag or SHA, not `@main`.** It holds delete
+- **Pin the reusable workflow to a full commit SHA.** It holds delete
   permissions; `@main` means every repo silently picks up any change to it.
 - **Substitute your own org** for `stealth-engine` in the caller's `uses:`.
 - **`VERCEL_PROJECT_IDS` misconfiguration is the top operational hazard.** Point a repo
