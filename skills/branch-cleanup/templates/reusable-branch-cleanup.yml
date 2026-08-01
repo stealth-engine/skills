@@ -240,9 +240,21 @@ jobs:
                 [ "$committed" = "-" ] && { skipped=$((skipped+1)); continue; }
                 age_d=$(( (now - $(date -u -d "$committed" +%s)) / 86400 ))
                 [ "$age_d" -lt "$STALE_DAYS" ] && { skipped=$((skipped+1)); continue; }
-              elif [ "${GRACE_MIN:-0}" -gt 0 ] && [ "$last_closed" != "-" ]; then
-                age_m=$(( (now - $(date -u -d "$last_closed" +%s)) / 60 ))
-                [ "$age_m" -lt "$GRACE_MIN" ] && { skipped=$((skipped+1)); continue; }
+              else
+                # The branch has PR history. If it has COMMITS NEWER than its last PR
+                # closure, someone resumed work without opening a new PR — deleting
+                # would discard it. This is the sweep's equivalent of the event path's
+                # tip-SHA guard, which otherwise only protects the closed-PR route.
+                if [ "$last_closed" != "-" ] && [ "$committed" != "-" ] \
+                   && [ "$(date -u -d "$committed" +%s)" -gt "$(date -u -d "$last_closed" +%s)" ]; then
+                  skipped=$((skipped+1))
+                  note "| \`$name\` | skipped — commits pushed after the last PR closed |"
+                  continue
+                fi
+                if [ "${GRACE_MIN:-0}" -gt 0 ] && [ "$last_closed" != "-" ]; then
+                  age_m=$(( (now - $(date -u -d "$last_closed" +%s)) / 60 ))
+                  [ "$age_m" -lt "$GRACE_MIN" ] && { skipped=$((skipped+1)); continue; }
+                fi
               fi
 
               # Stack safety applies on EVERY deletion path, sweep included.

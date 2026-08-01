@@ -80,7 +80,9 @@ layered and independent:
    selecting `.target == "preview"` matches *zero* rows and silently deletes nothing.
 
 Both guards are re-applied per-candidate **in the sweep too**, not just on the event
-path. The step summary reports counts per run (found / deleted / kept / failed) — enough
+path — and because deletes are paced at ~3 s each, the sweep **re-verifies each ref is
+still absent immediately before deleting** rather than trusting the live-ref snapshot it
+built at the start (a branch recreated mid-sweep would otherwise lose its previews). The step summary reports counts per run (found / deleted / kept / failed) — enough
 to notice a filter that's excluding everything, though it does not list every kept ref.
 
 ## Runtime behaviour

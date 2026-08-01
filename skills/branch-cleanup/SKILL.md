@@ -97,6 +97,9 @@ Beyond the base-PR guard:
   protected ref`) — those need a human, not a retry. Detection keys off the *message*,
   because 422 is overloaded. A `gh ruleset check` pre-flight is **not** a reliable
   predictor: it reports configured rules and ignores the caller's bypass.
+- **Branches that advanced after their PR closed are preserved.** If a branch has
+  commits newer than its last PR closure, someone resumed work without opening a new
+  PR — the sweep skips it, and the event path compares the tip SHA for the same reason.
 - **Sweep is report-only by default** — it lists what it would delete; deleting requires
   `sweep_delete: true`.
 

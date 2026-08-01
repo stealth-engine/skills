@@ -270,6 +270,27 @@ jobs:
                 echo "DRY-RUN would delete ${uid} (${ref}) ${url}"
                 continue
               fi
+              # TOCTOU: /tmp/live_refs.txt was built once, but deletes are paced at
+              # ${INTERVAL}s each, so the snapshot ages as the sweep runs. Re-verify
+              # this ref is still absent immediately before destroying its deployment.
+              if [ "$MODE" = sweep ] && [ -n "$ref" ] && [ "$ref" != "-" ]; then
+                enc_ref="$(printf '%s' "$ref" | sed 's/%/%25/g; s/#/%23/g')"
+                set +e
+                recheck="$(gh api "repos/${REPO}/branches/${enc_ref}" 2>&1)"; recheck_rc=$?
+                set -e
+                if [ "$recheck_rc" -eq 0 ]; then
+                  total_kept=$((total_kept+1))
+                  echo "::notice::${ref} was recreated during the sweep — keeping ${uid}"
+                  continue
+                fi
+                case "$recheck" in
+                  *"Not Found"*|*"Branch not found"*) : ;;   # still gone — proceed
+                  *)  # lookup failed for another reason: fail closed, keep it
+                    total_kept=$((total_kept+1))
+                    echo "::warning::could not re-verify ${ref} — keeping ${uid}"
+                    continue ;;
+                esac
+              fi
               CODE="$(curl -sS -o /tmp/del.json -w '%{http_code}' -X DELETE \
                 "${AUTH[@]}" "${API}/v13/deployments/${uid}?teamId=${TEAM_ID}")"
               case "$CODE" in
