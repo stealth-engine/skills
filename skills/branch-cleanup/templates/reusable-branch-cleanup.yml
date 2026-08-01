@@ -289,7 +289,11 @@ jobs:
                   # leaves it earlier than the closure even though the ref moved.
                   # The activity API records actual push/force_push timestamps.
                   set +e
-                  last_push="$(gh api "repos/${REPO}/activity" \
+                  # --method GET is REQUIRED: `gh api` defaults to POST as soon as any
+                  # -f/-F parameter is present, and this endpoint is GET-only. Without
+                  # it every call fails and the fail-closed path silently skips every
+                  # candidate — the sweep would delete nothing at all.
+                  last_push="$(gh api --method GET "repos/${REPO}/activity" \
                                  -f ref="refs/heads/${name}" -F per_page=30 \
                                  --jq '[.[] | select(.activity_type == "push" or .activity_type == "force_push")
                                         | .timestamp] | sort | last // empty' 2>/dev/null)"; act_rc=$?

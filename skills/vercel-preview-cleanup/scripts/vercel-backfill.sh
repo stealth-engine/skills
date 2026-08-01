@@ -98,9 +98,19 @@ for PROJECT_ID in "${PROJECTS[@]}"; do
     # both as a branch and as an open PR head (a fork PR's head is never a branch
     # here). Fail closed on any lookup error.
     enc_ref="$(printf '%s' "$ref" | sed 's/%/%25/g; s/#/%23/g')"
-    if gh api "repos/${REPO}/branches/${enc_ref}" >/dev/null 2>&1; then
+    set +e
+    probe="$(gh api "repos/${REPO}/branches/${enc_ref}" 2>&1)"; probe_rc=$?
+    set -e
+    if [ $probe_rc -eq 0 ]; then
       kept=$((kept+1)); found=$((found-1)); echo "  kept (branch recreated): ${ref}"; continue
     fi
+    # Only a confirmed 404 proves absence. Auth/rate-limit/transient errors must NOT
+    # be read as "branch is gone" — that would delete a live branch's previews.
+    case "$probe" in
+      *"Not Found"*|*"Branch not found"*) : ;;
+      *) kept=$((kept+1)); found=$((found-1))
+         echo "  kept (branch probe inconclusive): ${ref} — ${probe%%$'\n'*}" >&2; continue ;;
+    esac
     if ! pr_live="$(gh pr list --repo "$REPO" --head "$ref" --state open \
                       --limit 1 --json number --jq 'length' 2>/dev/null)" || [ -z "$pr_live" ]; then
       kept=$((kept+1)); found=$((found-1)); echo "  kept (open-PR re-check failed): ${ref}" >&2; continue
