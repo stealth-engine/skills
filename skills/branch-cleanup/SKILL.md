@@ -38,7 +38,10 @@ Two traps that make this worse than it looks:
   reports (one confirmed by GitHub staff as a bug) say deleting a ref via API or
   `git push --delete` **closes** dependent PRs instead. A bot must assume the close path.
 
-This check runs on **every** deletion path, sweep included — and it **fails closed**: if
+All of this runs **inside `delete_branch()`**, so no path can bypass it — head-PR,
+base-PR and tip-freshness are re-checked immediately before the API call, after any
+earlier filtering. That placement is deliberate: the guards previously drifted between
+the event path and the sweep more than once. Each check **fails closed**: if
 the API call errors (a plausible rate-limit mid-sweep, since it runs once per branch), the
 branch is skipped rather than assumed safe.
 
@@ -97,9 +100,11 @@ Beyond the base-PR guard:
   protected ref`) — those need a human, not a retry. Detection keys off the *message*,
   because 422 is overloaded. A `gh ruleset check` pre-flight is **not** a reliable
   predictor: it reports configured rules and ignores the caller's bypass.
-- **Branches that advanced after their PR closed are preserved.** If a branch has
-  commits newer than its last PR closure, someone resumed work without opening a new
-  PR — the sweep skips it, and the event path compares the tip SHA for the same reason.
+- **Branches that advanced after the decision are preserved.** Every deletion re-reads
+  the tip and refuses if it moved. The event path compares against
+  `github.event.pull_request.head.sha` — the **close-time** SHA from the webhook. It
+  must not use the PR's `headRefOid`: that **tracks the branch even after closure**, so
+  comparing it to the live tip can never differ (verified against the GitHub API).
 - **Sweep is report-only by default** — it lists what it would delete; deleting requires
   `sweep_delete: true`.
 

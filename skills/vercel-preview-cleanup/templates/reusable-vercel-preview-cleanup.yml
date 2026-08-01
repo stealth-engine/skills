@@ -290,6 +290,23 @@ jobs:
                     echo "::warning::could not re-verify ${ref} — keeping ${uid}"
                     continue ;;
                 esac
+                # A FORK PR's head is never a branch here, so the check above cannot
+                # see it. Re-check open PR heads as well, or a fork PR opened during
+                # the sweep loses its previews. Fail closed on lookup error.
+                set +e
+                pr_live="$(gh pr list --repo "$REPO" --head "$ref" --state open \
+                             --limit 1 --json number --jq 'length' 2>/dev/null)"; pr_rc=$?
+                set -e
+                if [ $pr_rc -ne 0 ] || [ -z "$pr_live" ]; then
+                  total_kept=$((total_kept+1))
+                  echo "::warning::could not re-check open PRs for ${ref} — keeping ${uid}"
+                  continue
+                fi
+                if [ "$pr_live" -gt 0 ]; then
+                  total_kept=$((total_kept+1))
+                  echo "::notice::${ref} is now an open PR head — keeping ${uid}"
+                  continue
+                fi
               fi
               CODE="$(curl -sS -o /tmp/del.json -w '%{http_code}' -X DELETE \
                 "${AUTH[@]}" "${API}/v13/deployments/${uid}?teamId=${TEAM_ID}")"

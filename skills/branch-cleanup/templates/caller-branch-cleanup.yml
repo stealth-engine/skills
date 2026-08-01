@@ -43,6 +43,7 @@ jobs:
     uses: YOUR-ORG/.github/.github/workflows/reusable-branch-cleanup.yml@REPLACE-WITH-FULL-COMMIT-SHA  # a tag is MUTABLE — only a full SHA is immutable
     with:
       branch: ${{ github.event.pull_request.head.ref }}
+      head_sha: ${{ github.event.pull_request.head.sha }}   # immutable close-time SHA
       dry_run: false
       grace_minutes: 0        # raise to ~10 if you adopt Graphite/ghstack/spr
     permissions:

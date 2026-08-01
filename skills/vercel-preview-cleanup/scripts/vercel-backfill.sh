@@ -93,6 +93,21 @@ for PROJECT_ID in "${PROJECTS[@]}"; do
       echo "  DRY-RUN would delete ${uid}  ${ref}  ${url}"
       continue
     fi
+    # live.txt is a one-time snapshot and this loop sleeps ${INTERVAL}s per delete, so
+    # it ages for many minutes. Re-verify the ref immediately before destroying it —
+    # both as a branch and as an open PR head (a fork PR's head is never a branch
+    # here). Fail closed on any lookup error.
+    enc_ref="$(printf '%s' "$ref" | sed 's/%/%25/g; s/#/%23/g')"
+    if gh api "repos/${REPO}/branches/${enc_ref}" >/dev/null 2>&1; then
+      kept=$((kept+1)); found=$((found-1)); echo "  kept (branch recreated): ${ref}"; continue
+    fi
+    if ! pr_live="$(gh pr list --repo "$REPO" --head "$ref" --state open \
+                      --limit 1 --json number --jq 'length' 2>/dev/null)" || [ -z "$pr_live" ]; then
+      kept=$((kept+1)); found=$((found-1)); echo "  kept (open-PR re-check failed): ${ref}" >&2; continue
+    fi
+    if [ "$pr_live" -gt 0 ]; then
+      kept=$((kept+1)); found=$((found-1)); echo "  kept (now an open PR head): ${ref}"; continue
+    fi
     CODE="$(curl -sS -o "$tmp/del.json" -w '%{http_code}' -X DELETE \
       "${AUTH[@]}" "${API}/v13/deployments/${uid}?teamId=${TEAM_ID}")"
     case "$CODE" in

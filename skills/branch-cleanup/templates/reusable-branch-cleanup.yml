@@ -17,6 +17,14 @@ on:
         required: false
         default: ''
         type: string
+      head_sha:
+        description: 'Event path: the head SHA AT CLOSE TIME
+          (github.event.pull_request.head.sha). Required for the
+          "no commits pushed after closure" guard — a closed PR''s headRefOid
+          TRACKS its branch, so it cannot be used to detect advancement.'
+        required: false
+        default: ''
+        type: string
       dry_run:
         description: 'Log intended deletions without deleting.'
         required: false
@@ -68,6 +76,7 @@ jobs:
           REPO: ${{ github.repository }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           BRANCH: ${{ inputs.branch }}
+          HEAD_SHA: ${{ inputs.head_sha }}
           DRY_RUN: ${{ inputs.dry_run }}
           SWEEP_DELETE: ${{ inputs.sweep_delete }}
           PROTECTED: ${{ inputs.protected_branches }}
@@ -111,8 +120,52 @@ jobs:
             [ "$n" -gt 0 ]
           }
 
+          # EVERY deletion goes through here, so the guards cannot drift between the
+          # event path and the sweep (they did, repeatedly). All lookups FAIL CLOSED,
+          # and all are re-run at delete time — a snapshot taken earlier in a long
+          # sweep may be minutes stale.
           delete_branch() {
-            local b="$1" out code
+            local b="$1" expected_sha="${2:-}" out code n rc tip trc enc
+            enc="$(printf '%s' "$b" | sed 's/%/%25/g; s/#/%23/g')"
+
+            # (a) no OPEN PR may use this branch as HEAD (may have opened mid-run)
+            set +e
+            n="$(gh pr list --repo "$REPO" --head "$b" --state open \
+                   --limit 100 --json number --jq 'length' 2>/dev/null)"; rc=$?
+            set -e
+            if [ $rc -ne 0 ] || [ -z "$n" ]; then
+              skipped=$((skipped+1)); note "| \`$b\` | ⛔ skipped — head-PR re-check failed (failing closed) |"; return 0
+            fi
+            if [ "$n" -gt 0 ]; then
+              skipped=$((skipped+1)); note "| \`$b\` | ⛔ skipped — an OPEN PR uses it as head |"; return 0
+            fi
+
+            # (b) no OPEN PR may use it as BASE — deleting would close those PRs
+            if has_dependent_prs "$b"; then
+              skipped=$((skipped+1))
+              if [ "$GUARD_ERR" = 1 ]; then
+                note "| \`$b\` | ⛔ skipped — base-PR re-check failed (failing closed) |"
+              else
+                note "| \`$b\` | ⛔ skipped — open PRs target it as BASE |"
+              fi
+              return 0
+            fi
+
+            # (c) the tip must still be the SHA we made the decision on
+            if [ -n "$expected_sha" ]; then
+              set +e
+              tip="$(gh api "repos/${REPO}/git/ref/heads/${enc}" --jq '.object.sha' 2>&1)"; trc=$?
+              set -e
+              if [ $trc -ne 0 ]; then
+                case "$tip" in
+                  *"Not Found"*) deleted=$((deleted+1)); note "| \`$b\` | already gone (success) |"; return 0 ;;
+                  *) skipped=$((skipped+1)); note "| \`$b\` | ⛔ skipped — tip re-check failed (failing closed) |"; return 0 ;;
+                esac
+              fi
+              if [ "$tip" != "$expected_sha" ]; then
+                skipped=$((skipped+1)); note "| \`$b\` | skipped — new commits pushed since the decision |"; return 0
+              fi
+            fi
             if [ "$DRY_RUN" = true ]; then
               note "| \`$b\` | DRY-RUN would delete |"; return 0
             fi
@@ -176,32 +229,10 @@ jobs:
                   skipped=$((skipped+1))
                   note "| \`$BRANCH\` | deferred to sweep — closed ${age}m ago, grace ${GRACE_MIN}m |"
                 else
-                  # Did the branch move after the PR closed? If so someone pushed new
-                  # work post-closure and deleting would discard it. Every failure
-                  # path here FAILS CLOSED — `|| echo ""` would turn a rate limit into
-                  # "no new commits" and delete the work it exists to protect.
-                  pr_sha="$(jq -r '.headRefOid // empty' <<<"$state")"
-                  enc_b="$(printf '%s' "$BRANCH" | sed 's/%/%25/g; s/#/%23/g')"
-                  set +e
-                  tip="$(gh api "repos/${REPO}/git/ref/heads/${enc_b}" --jq '.object.sha' 2>&1)"; tip_rc=$?
-                  set -e
-                  if [ "$tip_rc" -ne 0 ]; then
-                    case "$tip" in
-                      *"Not Found"*)   # ref already gone — nothing to do
-                        deleted=$((deleted+1)); note "| \`$BRANCH\` | already gone (success) |" ;;
-                      *)
-                        skipped=$((skipped+1))
-                        note "| \`$BRANCH\` | ⛔ skipped — tip lookup failed, cannot prove no new commits (failing closed) |" ;;
-                    esac
-                  elif [ -z "$pr_sha" ]; then
-                    skipped=$((skipped+1))
-                    note "| \`$BRANCH\` | ⛔ skipped — PR head SHA unknown, cannot compare (failing closed) |"
-                  elif [ "$pr_sha" != "$tip" ]; then
-                    skipped=$((skipped+1))
-                    note "| \`$BRANCH\` | skipped — new commits pushed after the PR closed |"
-                  else
-                    delete_branch "$BRANCH"
-                  fi
+                  # The close-time SHA comes from the webhook payload. A closed PR's
+                  # headRefOid TRACKS its branch, so comparing it against the live tip
+                  # can never differ — that comparison was dead code.
+                  delete_branch "$BRANCH" "$HEAD_SHA"
                 fi
               fi
             fi
@@ -213,19 +244,20 @@ jobs:
                   refs(refPrefix:"refs/heads/",first:100,after:$endCursor){
                     pageInfo{ hasNextPage endCursor }
                     nodes{ name
-                      target{ ... on Commit { committedDate } }
+                      target{ ... on Commit { committedDate oid } }
                       openPRs: associatedPullRequests(states:OPEN){ totalCount }
                       allPRs: associatedPullRequests(first:100){ nodes{ state closedAt isCrossRepository } } } } } }' \
               --jq '.data.repository.refs.nodes[]
                     | [ .name,
                         (.target.committedDate // "-"),
+                        (.target.oid // "-"),
                         ([.allPRs.nodes[].state] | join(",") | if . == "" then "-" else . end),
                         ([.allPRs.nodes[].closedAt // empty] | sort | last // "-"),
                         ([.allPRs.nodes[].isCrossRepository] | any | tostring),
                         (.openPRs.totalCount | tostring) ]
                     | @tsv' > /tmp/branches.tsv
 
-            while IFS=$'\t' read -r name committed states last_closed is_fork open_count; do
+            while IFS=$'\t' read -r name committed tip_oid states last_closed is_fork open_count; do
               [ -z "$name" ] && continue
               if is_protected "$name"; then skipped=$((skipped+1)); continue; fi
               if [ "$is_fork" = true ]; then skipped=$((skipped+1)); continue; fi
@@ -269,7 +301,9 @@ jobs:
               fi
 
               if [ "$SWEEP_DELETE" = true ]; then
-                delete_branch "$name"
+                # Pass the snapshot tip: delete_branch re-reads it and refuses if the
+                # branch advanced while this (paced) sweep was running.
+                delete_branch "$name" "$tip_oid"
               else
                 note "| \`$name\` | would delete (sweep is report-only; set sweep_delete: true) |"
               fi
