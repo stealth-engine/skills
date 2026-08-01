@@ -102,7 +102,10 @@ to notice a filter that's excluding everything, though it does not list every ke
 1. Host [`templates/reusable-vercel-preview-cleanup.yml`](./templates/reusable-vercel-preview-cleanup.yml)
    **once** in the org's `.github` repo. Do not copy it per repo.
 2. Add [`templates/caller-vercel-preview-cleanup.yml`](./templates/caller-vercel-preview-cleanup.yml)
-   to each repo's default branch (~30 lines).
+   to each repo's default branch (~30 lines). **Replace `YOUR-ORG`** and keep the
+   `uses:` pinned — the template ships `@v1`, so tag the hosting repo `v1` (or pin a
+   commit SHA). It forwards a delete-capable token; `@main` would let any change there
+   take effect across every repo at once.
 3. Set per-repo `vars.VERCEL_PROJECT_IDS` (comma-separated — a monorepo maps one git repo
    to several Vercel projects) and `vars.VERCEL_TEAM_ID`; set `secrets.VERCEL_TOKEN`.
 4. **Private repos:** the hosting repo's Actions access settings must permit other org

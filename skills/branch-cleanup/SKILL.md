@@ -119,7 +119,10 @@ officially documented. The scheduled sweep is what covers the first case.
 1. Host [`templates/reusable-branch-cleanup.yml`](./templates/reusable-branch-cleanup.yml)
    **once** in the org's `.github` repo. Do not copy it per repo.
 2. Add [`templates/caller-branch-cleanup.yml`](./templates/caller-branch-cleanup.yml) to
-   each repo (~30 lines).
+   each repo (~30 lines). **Replace `YOUR-ORG`** and keep the
+   `uses:` pinned — the template ships `@v1`, so tag the hosting repo `v1` (or pin a
+   commit SHA). It forwards a delete-capable token; `@main` would let any change there
+   take effect across every repo at once.
 3. Enable `delete_branch_on_merge` (above).
 4. **Private repos:** on the *hosting* repo set **Settings → Actions → General → Access**
    to "Accessible from repositories in the organization", or every caller fails.

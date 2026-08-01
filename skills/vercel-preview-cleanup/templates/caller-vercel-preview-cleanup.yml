@@ -1,4 +1,10 @@
-# Per-repo caller. Copy to .github/workflows/vercel-preview-cleanup.yml
+# Per-repo caller.
+#
+# ⚠️ BEFORE USE: replace YOUR-ORG, and pin `uses:` to an immutable tag or commit SHA.
+# This workflow forwards a delete-capable token to a workflow in another repo — with
+# `@main`, any change there (or a compromise of it) takes effect everywhere instantly.
+#
+# Copy to .github/workflows/vercel-preview-cleanup.yml
 #
 # MUST live on the DEFAULT BRANCH: the `delete` event runs the workflow definition
 # from the default branch — the feature branch is already gone by then. This is also
@@ -31,7 +37,7 @@ jobs:
   on-branch-delete:
     # Gate on ref_type: the delete event fires for TAGS too.
     if: github.event_name == 'delete' && github.event.ref_type == 'branch'
-    uses: stealth-engine/.github/.github/workflows/reusable-vercel-preview-cleanup.yml@main
+    uses: YOUR-ORG/.github/.github/workflows/reusable-vercel-preview-cleanup.yml@v1  # PIN: tag or SHA, never @main
     with:
       project_ids: ${{ vars.VERCEL_PROJECT_IDS }}
       team_id: ${{ vars.VERCEL_TEAM_ID }}
@@ -44,7 +50,7 @@ jobs:
 
   sweep:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    uses: stealth-engine/.github/.github/workflows/reusable-vercel-preview-cleanup.yml@main
+    uses: YOUR-ORG/.github/.github/workflows/reusable-vercel-preview-cleanup.yml@v1  # PIN: tag or SHA, never @main
     with:
       project_ids: ${{ vars.VERCEL_PROJECT_IDS }}
       team_id: ${{ vars.VERCEL_TEAM_ID }}

@@ -117,7 +117,9 @@ jobs:
               note "| \`$b\` | DRY-RUN would delete |"; return 0
             fi
             set +e
-            local enc; enc="$(printf '%s' "$b" | sed 's/#/%23/g; s/?/%3F/g')"
+            # '%' must be encoded FIRST (else we corrupt our own escapes). '?' is
+            # illegal in git refs, so only '%' and '#' can realistically appear.
+            local enc; enc="$(printf '%s' "$b" | sed 's/%/%25/g; s/#/%23/g')"
             out="$(gh api -X DELETE "repos/${REPO}/git/refs/heads/${enc}" 2>&1)"; code=$?
             set -e
             if [ $code -eq 0 ]; then
@@ -146,12 +148,14 @@ jobs:
             else
               # Re-query LIVE PR state; never trust the webhook payload. It is a
               # snapshot and the run may have queued. Catches a restack reopen.
-              prs="$(gh pr list --repo "$REPO" --head "$BRANCH" --state all \
-                       --json state,closedAt,isCrossRepository --limit 100)"
-              open_n="$(jq '[.[] | select(.state == "OPEN")] | length' <<<"$prs")"
-              # Newest CLOSED one, for the grace calculation only.
-              state="$(jq -c '[.[] | select(.state != "OPEN")] | sort_by(.closedAt // "") | last' <<<"$prs")"
-              if [ "$prs" = "[]" ]; then
+              # OPEN PRs queried separately: with --state all, >100 closed records for
+              # a reused branch could push an open one out of the page and hide it.
+              open_n="$(gh pr list --repo "$REPO" --head "$BRANCH" --state open \
+                          --limit 100 --json number --jq 'length')"
+              prs="$(gh pr list --repo "$REPO" --head "$BRANCH" --state closed \
+                       --json state,closedAt,isCrossRepository,headRefOid --limit 100)"
+              state="$(jq -c 'sort_by(.closedAt // "") | last' <<<"$prs")"
+              if [ "$prs" = "[]" ] && [ "${open_n:-0}" -eq 0 ]; then
                 skipped=$((skipped+1)); note "| \`$BRANCH\` | skipped — no PR found |"
               elif [ "${open_n:-0}" -gt 0 ]; then
                 # Covers both a restack reopen AND a second open PR from the same head.
@@ -172,7 +176,17 @@ jobs:
                   skipped=$((skipped+1))
                   note "| \`$BRANCH\` | deferred to sweep — closed ${age}m ago, grace ${GRACE_MIN}m |"
                 else
-                  delete_branch "$BRANCH"
+                  # Did the branch move after the PR closed? If so someone pushed new
+                  # work post-closure and deleting would discard it.
+                  pr_sha="$(jq -r '.headRefOid // empty' <<<"$state")"
+                  cur_sha="$(gh api "repos/${REPO}/git/ref/heads/${BRANCH}" \
+                               --jq '.object.sha' 2>/dev/null || echo "")"
+                  if [ -n "$pr_sha" ] && [ -n "$cur_sha" ] && [ "$pr_sha" != "$cur_sha" ]; then
+                    skipped=$((skipped+1))
+                    note "| \`$BRANCH\` | skipped — new commits pushed after the PR closed |"
+                  else
+                    delete_branch "$BRANCH"
+                  fi
                 fi
               fi
             fi

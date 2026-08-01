@@ -56,7 +56,8 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     permissions:
-      contents: read      # sweep lists branches; branch mode verifies the branch is gone
+      contents: read        # list branches / verify the deleted branch is gone
+      pull-requests: read   # open-PR head refs — protects live (incl. fork) PR previews
     steps:
       - name: Resolve target and apply branch guards
         id: guard
@@ -149,8 +150,15 @@ jobs:
             # lives in the fork, so it never appears in repos/$REPO/branches — without
             # this it looks like an orphan and its previews get deleted while the PR is
             # still open and under review. --limit 1000: gh pr list defaults to 30.
-            gh pr list --repo "$REPO" --state open --limit 1000 \
-              --json headRefName --jq '.[].headRefName' >> /tmp/live_refs.txt
+            # Exhaustive (paginated) — a --limit cap would truncate and make the
+            # PRs beyond it look like orphans, deleting live fork previews.
+            gh api graphql --paginate -f owner="${REPO%/*}" -f name="${REPO#*/}" -f query='
+              query($owner:String!,$name:String!,$endCursor:String){
+                repository(owner:$owner,name:$name){
+                  pullRequests(states:OPEN,first:100,after:$endCursor){
+                    pageInfo{ hasNextPage endCursor }
+                    nodes{ headRefName } } } }' \
+              --jq '.data.repository.pullRequests.nodes[].headRefName' >> /tmp/live_refs.txt
             sort -u -o /tmp/live_refs.txt /tmp/live_refs.txt
             echo "Live refs (branches + open PR heads incl. forks): $(wc -l < /tmp/live_refs.txt)" >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -159,10 +167,40 @@ jobs:
           # guarantees it's gone, but workflow_dispatch does not — without this, a
           # dispatch could wipe a live branch's previews including the aliased one.
           if [ "$MODE" = branch ]; then
-            if gh api "repos/${REPO}/branches/${BRANCH}" --silent >/dev/null 2>&1; then
+            set +e
+            probe="$(gh api "repos/${REPO}/branches/${BRANCH}" 2>&1)"; probe_rc=$?
+            set -e
+            if [ $probe_rc -eq 0 ]; then
               { echo "### Aborted — branch still exists"
                 echo "\`$BRANCH\` is still present in \`$REPO\`. This job only cleans up"
                 echo "deployments for branches that are already deleted."
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            # FAIL CLOSED: only a definite 404 proves the branch is gone. Any other
+            # error (network, rate limit, 5xx, bad token) must NOT be read as absence.
+            case "$probe" in
+              *"Not Found"*|*"Branch not found"*) : ;;
+              *)
+                { echo "### Aborted — could not verify the branch is gone"
+                  echo "Lookup of \`$BRANCH\` failed with something other than 404, so"
+                  echo "absence is unproven. Failing closed rather than deleting."
+                  echo ""; echo '```'; echo "${probe}" | head -5; echo '```'
+                } >> "$GITHUB_STEP_SUMMARY"
+                exit 1 ;;
+            esac
+
+            # A fork PR can have the SAME head name as the deleted base-repo branch.
+            # Its deployments carry the same githubCommitRef, so deleting by ref would
+            # kill a live fork PR's previews. Skip if any OPEN PR uses this head.
+            fork_open="$(gh pr list --repo "$REPO" --head "$BRANCH" --state open \
+                          --limit 100 --json number --jq 'length' 2>/dev/null || echo ERR)"
+            if [ "$fork_open" = ERR ]; then
+              echo "### Aborted — could not check open PRs for this head (failing closed)" >> "$GITHUB_STEP_SUMMARY"; exit 1
+            fi
+            if [ "$fork_open" -gt 0 ]; then
+              { echo "### Skipped — an OPEN PR still uses \`$BRANCH\` as its head"
+                echo "Most likely a fork PR with the same branch name. Its previews are live."
               } >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi

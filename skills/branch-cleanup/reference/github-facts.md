@@ -28,7 +28,7 @@ refs via API or git must assume the **close** path even for merged branches.
 
 **Deletion is not blocked at the API layer.** The PR page hides the delete button while a
 PR is open, and the branches list shows a warning dialog — but `DELETE /git/refs` has
-**no block and no documented mention of PRs at all**. The guard is entirely ours. **[D][S]**
+**no block and no documented mention of PRs at all**. The guard is entirely ours. **[D]** **[S]**
 
 Recovery is **[U]** — docs don't cover reopening a PR closed by base deletion, and you
 can't retarget a closed PR or reopen it while its base is missing. Treat this as
@@ -66,7 +66,7 @@ gh api -X PATCH repos/{owner}/{repo} -F delete_branch_on_merge=true   # set
 > follow-up PATCH.
 
 **Org-level default: confirmed none.** `PATCH /orgs/{org}` has zero branch/merge/delete
-properties **[S][E]**, so a fleet-wide rollout must iterate per repo.
+properties **[S]** **[E]**, so a fleet-wide rollout must iterate per repo.
 
 **Merge queues** **[U]** — no official docs. Community reports (a) head branches sometimes
 never auto-deleted with a queue enabled, and (b) `gh pr merge --delete-branch` on a
