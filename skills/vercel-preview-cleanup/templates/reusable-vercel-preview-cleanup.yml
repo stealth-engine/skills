@@ -144,8 +144,15 @@ jobs:
           # In sweep mode, build the set of branches that still exist. Anything else
           # is an orphan. --paginate because a repo can exceed 100 branches.
           if [ "$MODE" = sweep ]; then
-            gh api "repos/${REPO}/branches" --paginate --jq '.[].name' > /tmp/live_branches.txt
-            echo "Live branches: $(wc -l < /tmp/live_branches.txt)" >> "$GITHUB_STEP_SUMMARY"
+            gh api "repos/${REPO}/branches" --paginate --jq '.[].name' > /tmp/live_refs.txt
+            # CRITICAL: also treat every OPEN PR's head ref as live. A FORK PR's branch
+            # lives in the fork, so it never appears in repos/$REPO/branches — without
+            # this it looks like an orphan and its previews get deleted while the PR is
+            # still open and under review. --limit 1000: gh pr list defaults to 30.
+            gh pr list --repo "$REPO" --state open --limit 1000 \
+              --json headRefName --jq '.[].headRefName' >> /tmp/live_refs.txt
+            sort -u -o /tmp/live_refs.txt /tmp/live_refs.txt
+            echo "Live refs (branches + open PR heads incl. forks): $(wc -l < /tmp/live_refs.txt)" >> "$GITHUB_STEP_SUMMARY"
           fi
 
           # Branch mode: refuse to run against a branch that STILL EXISTS. `on: delete`
@@ -202,7 +209,7 @@ jobs:
               while IFS=$'\t' read -r uid ref url; do
                 [ "$ref" = "-" ] && { total_kept=$((total_kept+1)); continue; }
                 if ! passes_guards "$ref"; then total_kept=$((total_kept+1)); continue; fi
-                if grep -qxF "$ref" /tmp/live_branches.txt; then
+                if grep -qxF "$ref" /tmp/live_refs.txt; then
                   total_kept=$((total_kept+1)); continue
                 fi
                 printf '%s\t%s\t%s\n' "$uid" "$ref" "$url" >> /tmp/filtered.txt

@@ -30,9 +30,14 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 command -v jq >/dev/null || { echo "jq required" >&2; exit 1; }
 command -v gh >/dev/null || { echo "gh required" >&2; exit 1; }
 
-echo "Fetching live branches for ${REPO}…"
+echo "Fetching live refs for ${REPO}…"
 gh api "repos/${REPO}/branches" --paginate --jq '.[].name' > "$tmp/live.txt"
-echo "  $(wc -l < "$tmp/live.txt") live branches"
+# Open PR head refs too — a FORK PR's branch never appears in repos/$REPO/branches, so
+# without this its previews look orphaned and get deleted while the PR is still open.
+gh pr list --repo "$REPO" --state open --limit 1000 \
+  --json headRefName --jq '.[].headRefName' >> "$tmp/live.txt"
+sort -u -o "$tmp/live.txt" "$tmp/live.txt"
+echo "  $(wc -l < "$tmp/live.txt") live refs (branches + open PR heads)"
 
 protected() {
   local b="$1" p

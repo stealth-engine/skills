@@ -114,6 +114,31 @@ Installation is idempotent: if a workflow already exists, diff it and offer an u
 never clobber local edits without showing them first. Validate generated YAML
 (`actionlint` if available, otherwise a YAML parse) before writing.
 
+## Fork PRs
+
+A fork PR's branch lives in **the fork**, not your repo — so `on: delete` can never fire
+for it, and `repos/{owner}/{repo}/branches` will never list it. Two consequences:
+
+1. **The sweep must not treat them as orphans.** Its "still live" set is
+   `repo branches ∪ every OPEN PR's head ref` (from `gh pr list --state open`, which
+   includes fork PRs). Without that union, an open fork PR's previews would be deleted
+   **mid-review** — the ref simply isn't in the branch list.
+2. **Cleanup triggers on PR close instead.** That's the only event that fires in *your*
+   repo for a fork PR. The `fork-pr` job is gated to forks only
+   (`head.repo.full_name != github.repository`) so non-fork PRs stay on the `on: delete`
+   path and aren't handled twice.
+
+> ⚠️ **Why `pull_request_target`, and why it's safe here.** A `pull_request` run from a
+> fork gets a read-only token and **no secrets**, so `VERCEL_TOKEN` would be empty and the
+> job could not work. `pull_request_target` runs in the base repo's context with secrets —
+> which is dangerous **if you check out fork code**. This workflow **never checks anything
+> out**: it reads `head.ref` (a string, passed via `env:`, never interpolated into a shell
+> command) and calls the Vercel API. That is the documented safe use of the trigger. If you
+> ever add `actions/checkout` to it, you have created an RCE — don't.
+>
+> A malicious fork can't weaponise the branch *name* either: if the ref also exists in your
+> repo, the branch-still-exists check aborts before any deletion.
+
 ## Rolling out across many repos
 
 - **Pin the reusable workflow to a tag or SHA, not `@main`.** It holds delete
@@ -130,8 +155,7 @@ never clobber local edits without showing them first. Validate generated YAML
 - **No cross-branch dependency check.** Deployments are immutable and branch-scoped —
   unlike branches, nothing else can depend on one. A later pass should not add a
   "does anything else use this deployment" guard; there is nothing to check.
-- **Fork PR deployments are never swept.** There is no branch in this repo to delete, so
-  `on: delete` never fires for them. They age out via Vercel's retention.
+- ~~Fork PR deployments are never swept~~ — **now handled**, see below.
 - **Retention is not a substitute.** It's an independent backstop with its own floor
   (last 10 project deployments, last 20 READY non-production, the latest preview of an
   *active* branch, …) and `deploymentsToKeep` is **production-only**. See
