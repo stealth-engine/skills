@@ -67,8 +67,10 @@ enumerate and delete *all* of them.
 Deleting the wrong thing here means destroying a production deployment, so the guards are
 layered and independent:
 
-1. **`on: delete` only** — the workflow only ever runs for a branch that is *already
-   gone*. It cannot touch a live branch's previews.
+1. **The branch must be gone** — `on: delete` guarantees it, and because
+   `workflow_dispatch` does *not*, branch mode explicitly verifies the branch is absent
+   before deleting anything. (Without that check a dispatch could wipe a *live* branch's
+   previews, including the aliased one.)
 2. **Include pattern `*/*`** (default) — only branches containing a `/` are cleaned, so
    flat trunks (`main`, `master`, `develop`, `staging`, `production`) can never match.
 3. **Protected denylist** — `release/*` and `hotfix/*` **do contain a slash** and would
@@ -77,8 +79,9 @@ layered and independent:
    deployment. ⚠️ Preview deployments carry **`target: null`, not `"preview"`** —
    selecting `.target == "preview"` matches *zero* rows and silently deletes nothing.
 
-Every skipped branch is written to `$GITHUB_STEP_SUMMARY`, so a filter can never orphan
-deployments silently.
+Both guards are re-applied per-candidate **in the sweep too**, not just on the event
+path. The step summary reports counts per run (found / deleted / kept / failed) — enough
+to notice a filter that's excluding everything, though it does not list every kept ref.
 
 ## Runtime behaviour
 
@@ -89,7 +92,9 @@ deployments silently.
    *oldest* deployments — the exact problem being solved.
 3. Filter: drop `target == "production"` and already-deleted tombstones
    (delete is a *soft* delete — they reappear in later lists).
-4. Delete each, **paced at ~1 per 3 s**. Vercel allows **200 deletes per 600 s per team**;
+4. Cross-check each deployment's ref client-side before deleting — never trust the
+   server-side `branch=` filter alone.
+5. Delete each, **paced at ~1 per 3 s**. Vercel allows **200 deletes per 600 s per team**;
    a collapsing stack or a backfill will hit it. `200`/`404`/`410` all count as success.
 
 ## Install
@@ -108,6 +113,17 @@ deployments silently.
 Installation is idempotent: if a workflow already exists, diff it and offer an upgrade —
 never clobber local edits without showing them first. Validate generated YAML
 (`actionlint` if available, otherwise a YAML parse) before writing.
+
+## Rolling out across many repos
+
+- **Pin the reusable workflow to a tag or SHA, not `@main`.** It holds delete
+  permissions; `@main` means every repo silently picks up any change to it.
+- **Substitute your own org** for `stealth-engine` in the caller's `uses:`.
+- **`VERCEL_PROJECT_IDS` misconfiguration is the top operational hazard.** Point a repo
+  at a project belonging to a *different* repo and the sweep sees all of that project's
+  refs as orphans. Verify the mapping per repo before enabling `sweep_delete`.
+- **Watch for failing sweeps.** A daily sweep that errors is a red run nobody reads —
+  route the workflow's failure notifications somewhere a human sees.
 
 ## Deliberately not built
 

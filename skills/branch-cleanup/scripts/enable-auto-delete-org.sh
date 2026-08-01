@@ -9,8 +9,13 @@
 #   ORG=stealth-engine ./enable-auto-delete-org.sh
 #   ORG=stealth-engine APPLY=1 ./enable-auto-delete-org.sh
 #
-# Skips: archived repos, forks (unless INCLUDE_FORKS=1), repos already enabled, and
-# repos where you lack admin (reported, not failed — a 403 there is expected, not a bug).
+# Skips: archived repos, forks (unless INCLUDE_FORKS=1), and repos where you lack admin
+# (reported, not failed — a 403 there is expected, not a bug).
+#
+# NOTE: repo LIST payloads do not include delete_branch_on_merge, so "already enabled"
+# cannot be detected without a per-repo GET. PATCH is idempotent, so by default we just
+# PATCH every eligible repo. Set PRECHECK=1 to GET each repo first (slower, 1 extra
+# request per repo) and get an accurate already-enabled count.
 set -euo pipefail
 
 : "${ORG:?set ORG}"
@@ -36,6 +41,11 @@ while IFS=$'\t' read -r full archived fork current admin; do
   [ -z "$full" ] && continue
   if [ "$archived" = true ]; then skipped=$((skipped+1)); continue; fi
   if [ "$fork" = true ] && [ "$INCLUDE_FORKS" != 1 ]; then skipped=$((skipped+1)); continue; fi
+  # `current` is almost always "null": list payloads omit this field. Only a per-repo
+  # GET can tell, which PRECHECK=1 enables.
+  if [ "${PRECHECK:-0}" = 1 ] && [ "$current" != true ]; then
+    current="$(gh api "repos/${full}" --jq '.delete_branch_on_merge' 2>/dev/null || echo null)"
+  fi
   if [ "$current" = true ]; then already=$((already+1)); continue; fi
   # `permissions.admin` comes back on the list payload for the authenticated user.
   if [ "$admin" != true ]; then

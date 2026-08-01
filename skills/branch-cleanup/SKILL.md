@@ -38,7 +38,13 @@ Two traps that make this worse than it looks:
   reports (one confirmed by GitHub staff as a bug) say deleting a ref via API or
   `git push --delete` **closes** dependent PRs instead. A bot must assume the close path.
 
-This check runs on **every** deletion path, sweep included.
+This check runs on **every** deletion path, sweep included — and it **fails closed**: if
+the API call errors (a plausible rate-limit mid-sweep, since it runs once per branch), the
+branch is skipped rather than assumed safe.
+
+It is also not the only head-side guard: a branch with *any* open PR from it as head is
+skipped too, so a second open PR from the same head can't be destroyed by a stale
+`closed` event for a different one.
 
 ## What handles what
 
@@ -100,6 +106,13 @@ Beyond the base-PR guard:
 `gh pr merge --delete-branch` on a queue-enabled repo has been reported to delete the
 branch *before* merge, closing the PR and evicting it from the queue. Neither is
 officially documented. The scheduled sweep is what covers the first case.
+
+## Rolling out across many repos
+
+- **Pin the reusable workflow to a tag or SHA, not `@main`** — it holds `contents: write`.
+- **Substitute your own org** for `stealth-engine` in the caller's `uses:`.
+- Start with `sweep_delete: false` (the default) and read a few reports before enabling
+  deletion — the sweep is the path that touches branches nobody explicitly closed.
 
 ## Install
 

@@ -50,12 +50,13 @@ on:
         description: 'Vercel access token with delete permission on the projects.'
         required: true
 
-permissions: {}          # no GITHUB_TOKEN scopes needed — we only call Vercel
+permissions: {}
 
 jobs:
   cleanup:
     runs-on: ubuntu-latest
-    permissions: {}
+    permissions:
+      contents: read      # sweep lists branches; branch mode verifies the branch is gone
     steps:
       - name: Resolve target and apply branch guards
         id: guard
@@ -116,9 +117,27 @@ jobs:
           INTERVAL: ${{ inputs.delete_interval_seconds }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          INCLUDE: ${{ inputs.branch_include_pattern }}
+          PROTECTED: ${{ inputs.protected_branches }}
         run: |
           set -euo pipefail
           API=https://api.vercel.com
+
+          # Same guards as the pre-flight step, re-applied per candidate ref so the
+          # sweep cannot delete what the event path is forbidden to delete.
+          passes_guards() {
+            local b="$1" p
+            [ -z "$b" ] && return 1
+            # shellcheck disable=SC2254
+            case "$b" in $INCLUDE) ;; *) return 1 ;; esac
+            IFS=',' read -ra pats <<< "$PROTECTED"
+            for p in "${pats[@]}"; do
+              p="$(echo "$p" | tr -d '[:space:]')"; [ -z "$p" ] && continue
+              # shellcheck disable=SC2254
+              case "$b" in $p) return 1 ;; esac
+            done
+            return 0
+          }
           AUTH=(-H "Authorization: Bearer ${VERCEL_TOKEN}")
           total_found=0; total_deleted=0; total_failed=0; total_kept=0
 
@@ -127,6 +146,19 @@ jobs:
           if [ "$MODE" = sweep ]; then
             gh api "repos/${REPO}/branches" --paginate --jq '.[].name' > /tmp/live_branches.txt
             echo "Live branches: $(wc -l < /tmp/live_branches.txt)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # Branch mode: refuse to run against a branch that STILL EXISTS. `on: delete`
+          # guarantees it's gone, but workflow_dispatch does not — without this, a
+          # dispatch could wipe a live branch's previews including the aliased one.
+          if [ "$MODE" = branch ]; then
+            if gh api "repos/${REPO}/branches/${BRANCH}" --silent >/dev/null 2>&1; then
+              { echo "### Aborted — branch still exists"
+                echo "\`$BRANCH\` is still present in \`$REPO\`. This job only cleans up"
+                echo "deployments for branches that are already deleted."
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
           fi
 
           IFS=',' read -ra PROJECTS <<< "$PROJECT_IDS"
@@ -149,10 +181,12 @@ jobs:
               # HARD GUARD: never production. Preview deployments carry target=null,
               # NOT "preview" — selecting .target=="preview" would match nothing.
               # Also drop tombstones (delete is a soft delete; they reappear in lists).
-              jq -r '.deployments[]
+              jq -r --arg b "$BRANCH" '.deployments[]
                      | select(.target != "production")
                      | select((.readyState // .state) != "DELETED")
-                     | [.uid, (.meta.githubCommitRef // .meta.gitBranch // ""), (.url // "")]
+                     # Cross-check the ref client-side — never trust the server filter alone.
+                     | select($b == "" or ((.meta.githubCommitRef // .meta.gitBranch // "") == $b))
+                     | [.uid, ((.meta.githubCommitRef // .meta.gitBranch // "-")), (.url // "")]
                      | @tsv' <<<"$RESP" >> /tmp/candidates.txt
 
               UNTIL="$(jq -r '.pagination.next // empty' <<<"$RESP")"
@@ -166,8 +200,8 @@ jobs:
             if [ "$MODE" = sweep ]; then
               : > /tmp/filtered.txt
               while IFS=$'\t' read -r uid ref url; do
-                [ -z "$ref" ] && { total_kept=$((total_kept+1)); continue; }
-                case "$ref" in */*) ;; *) total_kept=$((total_kept+1)); continue ;; esac
+                [ "$ref" = "-" ] && { total_kept=$((total_kept+1)); continue; }
+                if ! passes_guards "$ref"; then total_kept=$((total_kept+1)); continue; fi
                 if grep -qxF "$ref" /tmp/live_branches.txt; then
                   total_kept=$((total_kept+1)); continue
                 fi

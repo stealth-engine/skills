@@ -96,11 +96,19 @@ jobs:
           # THE non-negotiable guard. Deleting a branch that open PRs use as BASE
           # closes those PRs. --limit 1000 because `gh pr list` defaults to 30, which
           # would silently under-report a deep stack and let the guard pass wrongly.
+          GUARD_ERR=0
           has_dependent_prs() {
-            local b="$1" n
+            local b="$1" n rc
+            GUARD_ERR=0
+            # `set -e` does NOT apply inside an if-condition, so check the exit code
+            # explicitly. An API failure (rate limit mid-sweep) must FAIL CLOSED:
+            # returning "no dependents" here would delete a branch and close its PRs.
+            set +e
             n="$(gh pr list --repo "$REPO" --base "$b" --state open \
-                   --json number --limit 1000 --jq 'length')"
-            [ "${n:-0}" -gt 0 ]
+                   --json number --limit 1000 --jq 'length' 2>/dev/null)"; rc=$?
+            set -e
+            if [ $rc -ne 0 ] || [ -z "$n" ]; then GUARD_ERR=1; return 0; fi
+            [ "$n" -gt 0 ]
           }
 
           delete_branch() {
@@ -109,7 +117,8 @@ jobs:
               note "| \`$b\` | DRY-RUN would delete |"; return 0
             fi
             set +e
-            out="$(gh api -X DELETE "repos/${REPO}/git/refs/heads/${b}" 2>&1)"; code=$?
+            local enc; enc="$(printf '%s' "$b" | sed 's/#/%23/g; s/?/%3F/g')"
+            out="$(gh api -X DELETE "repos/${REPO}/git/refs/heads/${enc}" 2>&1)"; code=$?
             set -e
             if [ $code -eq 0 ]; then
               deleted=$((deleted+1)); note "| \`$b\` | deleted |"; return 0
@@ -137,18 +146,25 @@ jobs:
             else
               # Re-query LIVE PR state; never trust the webhook payload. It is a
               # snapshot and the run may have queued. Catches a restack reopen.
-              state="$(gh pr list --repo "$REPO" --head "$BRANCH" --state all \
-                        --json state,closedAt,isCrossRepository --limit 100 \
-                        --jq 'sort_by(.closedAt // "") | last')"
-              if [ -z "$state" ] || [ "$state" = null ]; then
+              prs="$(gh pr list --repo "$REPO" --head "$BRANCH" --state all \
+                       --json state,closedAt,isCrossRepository --limit 100)"
+              open_n="$(jq '[.[] | select(.state == "OPEN")] | length' <<<"$prs")"
+              # Newest CLOSED one, for the grace calculation only.
+              state="$(jq -c '[.[] | select(.state != "OPEN")] | sort_by(.closedAt // "") | last' <<<"$prs")"
+              if [ "$prs" = "[]" ]; then
                 skipped=$((skipped+1)); note "| \`$BRANCH\` | skipped — no PR found |"
+              elif [ "${open_n:-0}" -gt 0 ]; then
+                # Covers both a restack reopen AND a second open PR from the same head.
+                skipped=$((skipped+1)); note "| \`$BRANCH\` | skipped — an OPEN PR still uses this branch as head |"
               elif [ "$(jq -r '.isCrossRepository' <<<"$state")" = true ]; then
                 skipped=$((skipped+1)); note "| \`$BRANCH\` | skipped — fork PR |"
-              elif [ "$(jq -r '.state' <<<"$state")" = OPEN ]; then
-                skipped=$((skipped+1)); note "| \`$BRANCH\` | skipped — PR reopened since the event |"
               elif has_dependent_prs "$BRANCH"; then
                 skipped=$((skipped+1))
-                note "| \`$BRANCH\` | ⛔ skipped — open PRs target it as BASE (deleting would close them) |"
+                if [ "$GUARD_ERR" = 1 ]; then
+                  note "| \`$BRANCH\` | ⛔ skipped — base-PR check FAILED (failing closed) |"
+                else
+                  note "| \`$BRANCH\` | ⛔ skipped — open PRs target it as BASE (deleting would close them) |"
+                fi
               else
                 closed_at="$(jq -r '.closedAt // empty' <<<"$state")"
                 age=$(( (now - $(date -u -d "${closed_at:-@$now}" +%s)) / 60 ))
@@ -169,12 +185,12 @@ jobs:
                     pageInfo{ hasNextPage endCursor }
                     nodes{ name
                       target{ ... on Commit { committedDate } }
-                      associatedPullRequests(first:20){ nodes{ state closedAt isCrossRepository } } } } } }' \
+                      associatedPullRequests(first:100){ nodes{ state closedAt isCrossRepository } } } } } }' \
               --jq '.data.repository.refs.nodes[]
                     | [ .name,
-                        (.target.committedDate // ""),
-                        ([.associatedPullRequests.nodes[].state] | join(",")),
-                        ([.associatedPullRequests.nodes[].closedAt // empty] | sort | last // ""),
+                        (.target.committedDate // "-"),
+                        ([.associatedPullRequests.nodes[].state] | join(",") | if . == "" then "-" else . end),
+                        ([.associatedPullRequests.nodes[].closedAt // empty] | sort | last // "-"),
                         ([.associatedPullRequests.nodes[].isCrossRepository] | any | tostring) ]
                     | @tsv' > /tmp/branches.tsv
 
@@ -184,12 +200,13 @@ jobs:
               if [ "$is_fork" = true ]; then skipped=$((skipped+1)); continue; fi
               case "$states" in *OPEN*) skipped=$((skipped+1)); continue ;; esac
 
-              if [ -z "$states" ]; then
-                # Never had a PR — only sweep once genuinely stale.
-                [ -z "$committed" ] && { skipped=$((skipped+1)); continue; }
+              if [ "$states" = "-" ]; then
+                # Never had a PR — only sweep once genuinely stale. (Sentinel "-", not
+                # empty: empty @tsv fields collapse under IFS=$'\t' and shift columns.)
+                [ "$committed" = "-" ] && { skipped=$((skipped+1)); continue; }
                 age_d=$(( (now - $(date -u -d "$committed" +%s)) / 86400 ))
                 [ "$age_d" -lt "$STALE_DAYS" ] && { skipped=$((skipped+1)); continue; }
-              elif [ "${GRACE_MIN:-0}" -gt 0 ] && [ -n "$last_closed" ]; then
+              elif [ "${GRACE_MIN:-0}" -gt 0 ] && [ "$last_closed" != "-" ]; then
                 age_m=$(( (now - $(date -u -d "$last_closed" +%s)) / 60 ))
                 [ "$age_m" -lt "$GRACE_MIN" ] && { skipped=$((skipped+1)); continue; }
               fi
@@ -197,7 +214,11 @@ jobs:
               # Stack safety applies on EVERY deletion path, sweep included.
               if has_dependent_prs "$name"; then
                 skipped=$((skipped+1))
-                note "| \`$name\` | ⛔ skipped — open PRs target it as BASE |"
+                if [ "$GUARD_ERR" = 1 ]; then
+                  note "| \`$name\` | ⛔ skipped — base-PR check FAILED (failing closed) |"
+                else
+                  note "| \`$name\` | ⛔ skipped — open PRs target it as BASE |"
+                fi
                 continue
               fi
 

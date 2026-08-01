@@ -34,6 +34,8 @@ jobs:
       team_id: ${{ vars.VERCEL_TEAM_ID }}
       branch: ${{ github.event.ref }}    # bare name — NOT refs/heads/*, don't strip a prefix
       dry_run: false
+    permissions:
+      contents: read
     secrets:
       vercel_token: ${{ secrets.VERCEL_TOKEN }}
 
@@ -45,5 +47,7 @@ jobs:
       team_id: ${{ vars.VERCEL_TEAM_ID }}
       branch: ${{ inputs.branch || '' }}
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+    permissions:
+      contents: read
     secrets:
       vercel_token: ${{ secrets.VERCEL_TOKEN }}
