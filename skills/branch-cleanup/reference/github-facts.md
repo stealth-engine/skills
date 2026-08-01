@@ -141,3 +141,27 @@ Slashed names work as-is (`heads/feat/foo`). For REST list endpoints past 100 re
 Branch + associated-PR state in one call needs GraphQL (`refs` →
 `associatedPullRequests`), which returns PRs where the branch is the **head** — pair it
 with `gh pr list --base` for base-role detection.
+
+## 8. `Ref.associatedPullRequests` is keyed on the ref NAME, not the tip commit
+
+Two same-named fields with **different** semantics — using the wrong mental model leads
+to real bugs in a cleanup guard: **[S]**
+
+| Field | Schema description |
+| --- | --- |
+| `Ref.associatedPullRequests` | "A list of pull requests with this **ref as the head ref**." |
+| `Commit.associatedPullRequests` | "The merged Pull Request that **introduced the commit**…" |
+
+Only `Commit.*` is commit-derived. **[E] Verified** by force-pushing a ref onto a commit
+that was never part of its PR — the association survived unchanged:
+
+```text
+tip=d2e8c85 (the PR's own commit)      prs=[{"number":28,"state":"CLOSED"}]
+tip=2879cb5 (never part of PR #28)     prs=[{"number":28,"state":"CLOSED"}]
+```
+
+So a force-push **cannot** orphan a branch's PR history and silently route it down a
+"never had a PR" code path. Any guard reasoning that assumes it can is unfounded —
+but note the no-PR path still needs its own ref-activity check, because a branch that
+genuinely never had a PR can be **recreated today at an ancient commit**, where
+`committedDate` alone would age it as stale.

@@ -120,6 +120,27 @@ jobs:
             [ "$n" -gt 0 ]
           }
 
+          # REAL ref-movement time. `committedDate` is author-controlled — a force-push
+          # to an older commit, a backdated committer date, or a branch recreated at an
+          # ancient commit all leave it looking older than the ref actually is. Echoes
+          # the newest activity timestamp (empty if the window records none) and returns
+          # NONZERO if the lookup itself failed, so every caller can fail closed.
+          #
+          # --method GET is REQUIRED: `gh api` switches to POST as soon as any -f/-F is
+          # present, and this endpoint is GET-only. Without it every call fails and the
+          # sweep silently skips every candidate — it would delete nothing at all.
+          # branch_creation counts: a deleted-then-recreated branch can have NO push
+          # activity (verified: refs here carry branch_creation/branch_deletion only).
+          # time_period is pinned rather than left to an unspecified default.
+          last_ref_activity() {
+            gh api --method GET "repos/${REPO}/activity" \
+              -f ref="refs/heads/$1" -f time_period=year -F per_page=100 \
+              --jq '[.[] | select(.activity_type == "push"
+                                 or .activity_type == "force_push"
+                                 or .activity_type == "branch_creation")
+                     | .timestamp] | sort | last // empty' 2>/dev/null
+          }
+
           # EVERY deletion goes through here, so the guards cannot drift between the
           # event path and the sweep (they did, repeatedly). All lookups FAIL CLOSED,
           # and all are re-run at delete time — a snapshot taken earlier in a long
@@ -274,7 +295,23 @@ jobs:
                 # Never had a PR — only sweep once genuinely stale. (Sentinel "-", not
                 # empty: empty @tsv fields collapse under IFS=$'\t' and shift columns.)
                 [ "$committed" = "-" ] && { skipped=$((skipped+1)); continue; }
-                age_d=$(( (now - $(date -u -d "$committed" +%s)) / 86400 ))
+                # Age from the LATER of the commit date and real ref movement. A branch
+                # recreated today at an ancient commit — restoring lost work, rescuing a
+                # deleted branch — has an old `committedDate` and would otherwise be
+                # swept on the day it was created. The PR-history path below has always
+                # consulted activity; this path used to trust `committedDate` alone.
+                set +e; last_act="$(last_ref_activity "$name")"; act_rc=$?; set -e
+                if [ $act_rc -ne 0 ]; then
+                  skipped=$((skipped+1))
+                  note "| \`$name\` | ⛔ skipped — ref-activity lookup failed, cannot age the branch (failing closed) |"
+                  continue
+                fi
+                ref_ts=$(date -u -d "$committed" +%s)
+                if [ -n "$last_act" ]; then
+                  act_ts=$(date -u -d "$last_act" +%s)
+                  [ "$act_ts" -gt "$ref_ts" ] && ref_ts=$act_ts
+                fi
+                age_d=$(( (now - ref_ts) / 86400 ))
                 [ "$age_d" -lt "$STALE_DAYS" ] && { skipped=$((skipped+1)); continue; }
               else
                 # The branch has PR history. If it has COMMITS NEWER than its last PR
@@ -284,37 +321,18 @@ jobs:
                 if [ "$last_closed" != "-" ]; then
                   closed_ts=$(date -u -d "$last_closed" +%s)
 
-                  # (i) REAL ref-movement time. `committedDate` is author-controlled —
-                  # a force-push to an older commit, or a backdated committer date,
-                  # leaves it earlier than the closure even though the ref moved.
-                  # branch_creation is included because a deleted-then-recreated branch
-                  # can have NO push activity at all (verified: refs exist with
-                  # types=branch_creation,branch_deletion only). Excluding it would let
-                  # an intentionally recreated branch be deleted.
-                  set +e
-                  # --method GET is REQUIRED: `gh api` defaults to POST as soon as any
-                  # -f/-F parameter is present, and this endpoint is GET-only. Without
-                  # it every call fails and the fail-closed path silently skips every
-                  # candidate — the sweep would delete nothing at all.
-                  # time_period is passed EXPLICITLY. Empirically the default already
-                  # returns far more than a day (a ref whose last push was 45 days ago
-                  # is still returned), but depending on an unspecified default for a
-                  # guard that authorises deletion is fragile — pin the window.
-                  last_push="$(gh api --method GET "repos/${REPO}/activity" \
-                                 -f ref="refs/heads/${name}" -f time_period=year \
-                                 -F per_page=100 \
-                                 --jq '[.[] | select(.activity_type == "push"
-                                                    or .activity_type == "force_push"
-                                                    or .activity_type == "branch_creation")
-                                        | .timestamp] | sort | last // empty' 2>/dev/null)"; act_rc=$?
-                  set -e
+                  # (i) Real ref movement since the closure — see last_ref_activity.
+                  set +e; last_push="$(last_ref_activity "$name")"; act_rc=$?; set -e
                   if [ $act_rc -ne 0 ]; then
                     skipped=$((skipped+1))
                     note "| \`$name\` | ⛔ skipped — push-history lookup failed, cannot prove no post-closure work (failing closed) |"
                     continue
                   fi
+                  # -ge, not -gt: activity landing in the SAME second as the closure is
+                  # ambiguous about ordering, so treat it as post-closure and keep the
+                  # branch. A false keep costs nothing; a false delete loses work.
                   if [ -n "$last_push" ] \
-                     && [ "$(date -u -d "$last_push" +%s)" -gt "$closed_ts" ]; then
+                     && [ "$(date -u -d "$last_push" +%s)" -ge "$closed_ts" ]; then
                     skipped=$((skipped+1))
                     note "| \`$name\` | skipped — ref pushed after the last PR closed |"
                     continue
@@ -330,7 +348,7 @@ jobs:
                   # (ii) committedDate as a secondary signal only. Either indicator
                   # firing is enough to keep the branch.
                   if [ "$committed" != "-" ] \
-                     && [ "$(date -u -d "$committed" +%s)" -gt "$closed_ts" ]; then
+                     && [ "$(date -u -d "$committed" +%s)" -ge "$closed_ts" ]; then
                     skipped=$((skipped+1))
                     note "| \`$name\` | skipped — commits dated after the last PR closed |"
                     continue
