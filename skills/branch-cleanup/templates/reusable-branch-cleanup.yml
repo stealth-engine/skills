@@ -214,19 +214,24 @@ jobs:
                     pageInfo{ hasNextPage endCursor }
                     nodes{ name
                       target{ ... on Commit { committedDate } }
-                      associatedPullRequests(first:100){ nodes{ state closedAt isCrossRepository } } } } } }' \
+                      openPRs: associatedPullRequests(states:OPEN){ totalCount }
+                      allPRs: associatedPullRequests(first:100){ nodes{ state closedAt isCrossRepository } } } } } }' \
               --jq '.data.repository.refs.nodes[]
                     | [ .name,
                         (.target.committedDate // "-"),
-                        ([.associatedPullRequests.nodes[].state] | join(",") | if . == "" then "-" else . end),
-                        ([.associatedPullRequests.nodes[].closedAt // empty] | sort | last // "-"),
-                        ([.associatedPullRequests.nodes[].isCrossRepository] | any | tostring) ]
+                        ([.allPRs.nodes[].state] | join(",") | if . == "" then "-" else . end),
+                        ([.allPRs.nodes[].closedAt // empty] | sort | last // "-"),
+                        ([.allPRs.nodes[].isCrossRepository] | any | tostring),
+                        (.openPRs.totalCount | tostring) ]
                     | @tsv' > /tmp/branches.tsv
 
-            while IFS=$'\t' read -r name committed states last_closed is_fork; do
+            while IFS=$'\t' read -r name committed states last_closed is_fork open_count; do
               [ -z "$name" ] && continue
               if is_protected "$name"; then skipped=$((skipped+1)); continue; fi
               if [ "$is_fork" = true ]; then skipped=$((skipped+1)); continue; fi
+              # EXACT open count (totalCount on a states:OPEN connection) — the 100-node
+              # page below can truncate for a heavily reused branch and hide an OPEN PR.
+              if [ "${open_count:-0}" != 0 ]; then skipped=$((skipped+1)); continue; fi
               case "$states" in *OPEN*) skipped=$((skipped+1)); continue ;; esac
 
               if [ "$states" = "-" ]; then
