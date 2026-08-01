@@ -146,7 +146,7 @@ jobs:
           # and all are re-run at delete time — a snapshot taken earlier in a long
           # sweep may be minutes stale.
           delete_branch() {
-            local b="$1" expected_sha="${2:-}" out code n rc tip trc enc
+            local b="$1" expected_sha="${2:-}" not_after="${3:-}" out code n rc tip trc enc act arc
             enc="$(printf '%s' "$b" | sed 's/%/%25/g; s/#/%23/g')"
 
             # (a) no OPEN PR may use this branch as HEAD (may have opened mid-run)
@@ -187,13 +187,27 @@ jobs:
                 skipped=$((skipped+1)); note "| \`$b\` | skipped — new commits pushed since the decision |"; return 0
               fi
             fi
+
+            # (d) the ref must not have been RECREATED since the decision. (c) compares
+            # only the tip SHA, which is blind to a delete-then-recreate at the SAME
+            # commit — precisely what GitHub's "Restore branch" button does, and about
+            # as clear a "someone wants this branch back" signal as exists. A ref's
+            # identity is not its SHA alone; recreation is real activity.
+            if [ -n "$not_after" ]; then
+              set +e; act="$(last_ref_activity "$b")"; arc=$?; set -e
+              if [ $arc -ne 0 ]; then
+                skipped=$((skipped+1)); note "| \`$b\` | ⛔ skipped — ref-activity re-check failed (failing closed) |"; return 0
+              fi
+              if [ -n "$act" ] && [ "$(date -u -d "$act" +%s)" -ge "$not_after" ]; then
+                skipped=$((skipped+1)); note "| \`$b\` | skipped — ref pushed or recreated since the decision |"; return 0
+              fi
+            fi
             if [ "$DRY_RUN" = true ]; then
               note "| \`$b\` | DRY-RUN would delete |"; return 0
             fi
             set +e
-            # '%' must be encoded FIRST (else we corrupt our own escapes). '?' is
-            # illegal in git refs, so only '%' and '#' can realistically appear.
-            local enc; enc="$(printf '%s' "$b" | sed 's/%/%25/g; s/#/%23/g')"
+            # $enc was computed at the top: '%' encoded FIRST (else we corrupt our own
+            # escapes). '?' is illegal in git refs, so only '%' and '#' can appear.
             out="$(gh api -X DELETE "repos/${REPO}/git/refs/heads/${enc}" 2>&1)"; code=$?
             set -e
             if [ $code -eq 0 ]; then
@@ -257,7 +271,10 @@ jobs:
                   # The close-time SHA comes from the webhook payload. A closed PR's
                   # headRefOid TRACKS its branch, so comparing it against the live tip
                   # can never differ — that comparison was dead code.
-                  delete_branch "$BRANCH" "$HEAD_SHA"
+                  # Closure time is the recreation reference: any ref activity at or
+                  # after it means someone touched the branch post-close.
+                  delete_branch "$BRANCH" "$HEAD_SHA" \
+                    "$(date -u -d "${closed_at:-@$now}" +%s)"
                 fi
               fi
             fi
@@ -372,9 +389,10 @@ jobs:
               fi
 
               if [ "$SWEEP_DELETE" = true ]; then
-                # Pass the snapshot tip: delete_branch re-reads it and refuses if the
-                # branch advanced while this (paced) sweep was running.
-                delete_branch "$name" "$tip_oid"
+                # Pass the snapshot tip AND the sweep's start time: delete_branch
+                # re-reads both and refuses if the branch advanced — or was recreated
+                # at the same commit — while this (paced) sweep was running.
+                delete_branch "$name" "$tip_oid" "$now"
               else
                 note "| \`$name\` | would delete (sweep is report-only; set sweep_delete: true) |"
               fi

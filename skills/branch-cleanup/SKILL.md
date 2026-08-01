@@ -107,11 +107,17 @@ Beyond the base-PR guard:
     **close-time** SHA from the webhook — and **refuses to delete if that input is
     missing**. It must *not* use the PR's `headRefOid`: that **tracks the branch even
     after closure**, so comparing it to the live tip can never differ.
-  - The sweep uses the **repository activity API** for a real `push`/`force_push`
-    timestamp. `committedDate` is **author-controlled** and proves nothing about when a
-    ref moved — a force-push to an older commit leaves it earlier than the PR closure.
-    The commit date is kept only as a secondary signal; either firing keeps the branch,
-    and a failed push-history lookup fails closed.
+  - The sweep uses the **repository activity API** for a real
+    `push`/`force_push`/`branch_creation` timestamp. `committedDate` is
+    **author-controlled** and proves nothing about when a ref moved — a force-push to an
+    older commit leaves it earlier than the PR closure, and a branch *recreated* today at
+    an ancient commit looks years old. The commit date is kept only as a secondary
+    signal; either firing keeps the branch, and a failed lookup fails closed.
+  - **A tip-SHA comparison is not enough on its own.** A branch deleted and recreated at
+    the *same* commit — what GitHub's **"Restore branch"** button does — passes any
+    SHA check unchanged. So every deletion also re-reads ref *activity* and refuses if
+    the ref was pushed or recreated after the decision point (PR closure for the event
+    path, sweep start for the sweep). Ref identity is not its SHA alone.
 - **Sweep is report-only by default** — it lists what it would delete; deleting requires
   `sweep_delete: true`.
 
