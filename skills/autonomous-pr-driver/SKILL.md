@@ -4,7 +4,7 @@ description: "Autonomously drive a pull request to merge-ready — opening or at
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "1.5.0"
+  version: "1.6.0"
 ---
 
 # Autonomous PR driver
@@ -129,9 +129,14 @@ The tag decision falls out of the axes:
   insight or correction** to hand over (a verified disproof, a documented house rule
   it missed) — not on every reject. This is how a learner stops re-raising that class
   of finding.
-- **Tag to re-trigger** → only *on-demand* reviewers, and only when **HEAD changed
-  and you still need their sign-off** to converge. Don't tag per-push bots for this —
-  they re-review themselves, and the tag just spawns a redundant pass.
+- **Tag to re-trigger** → only *on-demand* reviewers, and **only when you reach a HEAD
+  you believe is final/converged — not on intermediate fix rounds.** Each re-trigger
+  spends a **metered review**, and mid-cycle rounds don't need its pass. If that pass
+  flags something real, fixing it makes a **new** believed-final HEAD that gets its own
+  single pass — that's convergence, not waste: the rule is **once per final HEAD, not
+  one per PR ever**, and what you're avoiding is re-triggering on *every* round of a
+  multi-round fix cycle. Don't tag per-push bots for this — they re-review themselves,
+  and the tag just spawns a redundant pass.
 - **Don't tag / stop tagging** → non-learners that re-post resolved findings, and any
   tag that would only spawn a redundant or no-op review. **Escalation guard:** if a
   bot you've engaged keeps treating your replies as new work — more noise each
@@ -172,7 +177,11 @@ resource:
   reviewers, more triggers); @-mention once, per the two-axes policy.
 - **After the batched push, return to step 2** (watch the *new* commit's checks) — don't
   triage the old round against the new code. Per-push reviewers re-review on their own;
-  **re-trigger an on-demand reviewer** only if you still need its sign-off (`@bot review`).
+  **hold any on-demand reviewer for the end** — re-trigger it (`@bot review` / the
+  Reviewers-menu re-request) **when you reach a HEAD you believe is final, not after
+  every fix round**: each request is a metered review, and intermediate rounds don't
+  need its pass. (If that pass surfaces a real fix, the fixed commit is a new final
+  HEAD and gets one more pass — once per *final* HEAD, not one per PR.)
 - **Post a status table** as your triage/summary comment on the PR — one row per
   finding, so the human can audit the loop at a glance. **Verdict** is one of
   `Fixed` / `Rejected` / `Deferred` / `Verified-stale` / `Kept (with reason)` —
@@ -274,7 +283,7 @@ mode this prevents — it burns budget and, past the real issues, improves nothi
 ## Convergence checklist
 
 - [ ] All **required** checks green (ignore neutral/skipped + human-gated approvers).
-- [ ] **Every expected automated reviewer has weighed in on the current HEAD SHA** — cadence-aware: **per-push** reviewers re-review automatically (their check completed on HEAD and/or a review/inline/issue comment on HEAD); **on-demand** reviewers must be **explicitly re-triggered** (`@bot review`) if you need their pass on the new HEAD — don't silently exclude them, and don't hand off until a needed on-demand reviewer has actually re-reported on HEAD (or you've decided its sign-off isn't required and said so in the summary). Don't block on one-shot or human reviewers who won't re-post each push (their findings are covered by the next item).
+- [ ] **Every expected automated reviewer has weighed in on the current HEAD SHA** — cadence-aware: **per-push** reviewers re-review automatically (their check completed on HEAD and/or a review/inline/issue comment on HEAD); **on-demand** reviewers must be **explicitly re-triggered** (`@bot review`) if you need their pass — **on the final/converged HEAD, not on intermediate fix rounds** (each request is a metered review; a fix to a final-pass finding makes a new final HEAD that gets its own pass, so it's once per *final* HEAD, not one per PR) — don't silently exclude them, and don't hand off until a needed on-demand reviewer has actually re-reported on HEAD (or you've decided its sign-off isn't required and said so in the summary). Don't block on one-shot or human reviewers who won't re-post each push (their findings are covered by the next item).
 - [ ] **Every open finding triaged** — both unresolved review threads *and* top-level issue-comment findings, enumerated in full (not time/`commit_id`-filtered), each reaching a **terminal verdict** (fixed / rejected / verified-stale-in-file / kept-with-reason). A **`Deferred`** finding blocks hand-off unless it's tracked in a follow-up *and* the human has accepted the deferral.
 - [ ] Rejections each have a one-line reason comment.
 - [ ] **Fixes pushed in batched rounds, not per-finding** — each push carried a fully

@@ -23,12 +23,17 @@
   - **Tag to teach**: "learns = **Yes**" rows — @-mention when rejecting *and* you have
     a genuine insight/correction to hand over (verified disproof, house rule it
     missed), so it records a learning. Not on every reject.
-  - **Tag to re-trigger**: **on-demand** cadence rows — post `@handle review` after a
-    push when you still need that bot's pass on the new HEAD. For rows whose cadence is
+  - **Tag to re-trigger**: **on-demand** cadence rows — post `@handle review` **when you
+    reach a HEAD you believe is final/converged, not after every fix round** (each
+    request is a metered review; a final-pass fix makes a new final HEAD that gets its
+    own request). For rows whose cadence is
     **on-open-only or inconsistent**, only use a re-trigger command **explicitly documented
-    for that bot** (e.g. Codex's `@codex review`) — don't assume one exists, and don't block
-    on it if it doesn't re-post. Never re-trigger-tag **auto-per-push**
-    rows; they re-review themselves and the tag only spawns a redundant pass.
+    for that bot** (e.g. Codex's `@codex review`) — don't assume one exists. If it doesn't
+    re-post, don't wait forever — but don't silently hand off either: this doesn't waive
+    the final-HEAD sign-off gate, so either get a fresh report on HEAD **or** decide its
+    sign-off isn't required and **record that in the summary** (per the convergence
+    checklist). Never re-trigger-tag **auto-per-push** rows; they re-review themselves and
+    the tag only spawns a redundant pass.
   - **Don't tag / stop tagging**: "learns = **No**" rows (noise), and — escalation
     guard — any bot that starts treating your replies as fresh work, adding noise each
     round: stop tagging it entirely and just record its findings resolved/stale.
@@ -55,14 +60,17 @@ just adds noise.
 | **CodeRabbit** (`@coderabbitai`) | `@coderabbitai review` (incremental) · `@coderabbitai full review` | **`@coderabbitai pause`** → **`@coderabbitai resume`** (pause stops auto-reviews; manual `review` still works). Permanent per-PR: put **`@coderabbitai ignore` in the PR *description*** (not a comment). | `@coderabbitai resolve` (mark all its comments resolved) · `configuration` · `help`. Handle is install-configurable. |
 | **Cursor Bugbot** (`cursor[bot]`) | `cursor review` **or** `bugbot run` (bare keywords, no `@`) · `cursor review verbose=true` | **No comment command.** Dashboard only: **"Run only when mentioned"** (silences auto-review until you comment a trigger) or **"Run only once per PR"**. | `@cursor remember [fact]` teaches a persistent learned rule. No comment resolve/dismiss. |
 | **Codex** (`@codex`) | **`@codex review`** (flags P0/P1 only) · `@codex review for <focus>` | **No comment command.** Settings only: turn off **Code review** / **Automatic reviews** for the repo. | **`@codex` + anything other than `review`** = a cloud task that *makes changes* (e.g. `@codex fix the P1 issue`), **not** a review. |
-| **GitHub Copilot** — review = `copilot-pull-request-reviewer[bot]` | **No comment command.** Add **Copilot** via the **Reviewers** menu ("Request"); re-request with the ↻ button, or auto-review via a branch **ruleset**. | **No comment command.** Disable "Automatic Copilot code review" (settings) or remove the ruleset. | **`@copilot` is the *coding agent*, not review** — it *implements changes* at a write-access user's request; it does **not** trigger a code review. |
+| **GitHub Copilot** — review = `copilot-pull-request-reviewer[bot]` | **No comment command.** Add **Copilot** via the **Reviewers** menu ("Request"); re-request with the ↻ button — **on the final HEAD, not per fix round (each re-request is a metered Copilot review; a final-pass fix makes a new final HEAD that gets its own request)** — or auto-review via a branch **ruleset**. | **No comment command.** Disable "Automatic Copilot code review" (settings) or remove the ruleset. | **`@copilot` is the *coding agent*, not review** — it *implements changes* at a write-access user's request; it does **not** trigger a code review. |
 | **Greptile** (`@greptileai`) | `@greptileai` (mention alone; also `@greptileai <question/focus>`) | **No comment command.** Reviews only the initial PR-open by default (`triggerOnUpdates` defaults to **`false`**), so it's already quiet on pushes — set `triggerOnUpdates: false` only to undo a repo that opted into `true`. Skip even the initial review with `skipReview: "AUTOMATIC"` (manual-only); also `disabledLabels` / `excludeBranches` / `ignoreKeywords`. | Too chatty → config `strictness` / `commentTypes` / `updateSummaryOnly`, or 👎-react to train it down (`.greptile/config.json` or dashboard). |
 
 **Using this in the loop:**
 
-- **Re-trigger** an on-demand reviewer only per the two-axes rule above (you need its
-  sign-off on a new HEAD) — e.g. `@codex review`, or `@greptileai` (its per-push
-  re-review is off by default). **Not** an auto-per-push reviewer like `@coderabbitai`,
+- **Re-trigger** an on-demand reviewer only per the two-axes rule above — **when you
+  reach a HEAD you believe is final/converged, not on every fix round** (each request
+  is a metered review; a final-pass fix makes a new final HEAD that gets its own
+  request) — e.g.
+  `@codex review`, `@greptileai` (its per-push re-review is off by default), or
+  Copilot's Reviewers-menu re-request. **Not** an auto-per-push reviewer like `@coderabbitai`,
   which re-reviews every push itself — a manual `@coderabbitai review` just spends
   another review allowance on the same SHA.
 - **Quiet a looping bot** (same findings every round, or noise burying the real ones):

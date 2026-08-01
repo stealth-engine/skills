@@ -192,8 +192,10 @@ EOF
 - Tag per the two-axes decision in `SKILL.md` (values in
   [`known-bots.md`](./known-bots.md)): **teach** only learners (e.g. `@coderabbitai`
   re-scans and records Learnings), and only with a real insight to give; **re-trigger**
-  only on-demand-cadence reviewers (`@handle review`) when you need their pass on a new
-  HEAD — per-push bots re-review themselves.
+  only on-demand-cadence reviewers (`@handle review` / Reviewers-menu re-request), and
+  **only when you reach a HEAD you believe is final/converged, not on every fix round**
+  (each re-trigger is a metered review; a final-pass fix makes a new final HEAD that
+  gets its own re-trigger) — per-push bots re-review themselves.
 - Don't tag bots that have re-posted resolved findings repeatedly — it's noise; and if
   a bot you've engaged keeps treating replies as fresh work, stop tagging it entirely.
 - If a `gh` write 401s but `gh api` reads work, the token is read-restricted/expired
@@ -251,9 +253,10 @@ on wall-clock:
    is the per-push automated reviewers** — the bots that re-review every commit (those
    posting a check on the PR, or that re-reviewed a prior push) — **plus any on-demand
    reviewer whose sign-off you still need**: on-demand bots don't re-review a new
-   commit on their own, so re-trigger them (`@handle review` — cadence per
-   [`known-bots.md`](./known-bots.md)) and wait for the fresh pass; don't silently
-   drop them from the set (if you decide a bot's sign-off isn't required, say so in
+   commit on their own, so re-trigger them **here, on the final HEAD** (`@handle
+   review` — cadence per [`known-bots.md`](./known-bots.md)) and wait for the fresh
+   pass; don't silently drop them from the set (if you decide a bot's sign-off isn't
+   required, say so in
    the summary). It is **not** every login that ever commented. The reliable per-bot
    signal is its **check completing on HEAD** (the settle-poll already waits for that)
    and/or a review or inline comment attached to HEAD. A top-level **issue comment counts only when it explicitly names the current HEAD SHA** (issue comments aren't commit-attached — a stale one must not satisfy this gate); otherwise treat it as a finding input, not reviewer-completion evidence. **Do not block
