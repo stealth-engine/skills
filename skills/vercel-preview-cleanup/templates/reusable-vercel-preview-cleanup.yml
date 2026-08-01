@@ -167,8 +167,13 @@ jobs:
           # guarantees it's gone, but workflow_dispatch does not — without this, a
           # dispatch could wipe a live branch's previews including the aliased one.
           if [ "$MODE" = branch ]; then
+            # '#' is LEGAL in git refs and gh treats it as a URL fragment, so a raw
+            # interpolation of `feature/foo#bar` probes `feature/foo` instead — a 404
+            # on that prefix would wrongly prove absence and delete a LIVE branch's
+            # deployments (the Vercel query below IS encoded). Encode '%' first.
+            enc_branch="$(printf '%s' "$BRANCH" | sed 's/%/%25/g; s/#/%23/g')"
             set +e
-            probe="$(gh api "repos/${REPO}/branches/${BRANCH}" 2>&1)"; probe_rc=$?
+            probe="$(gh api "repos/${REPO}/branches/${enc_branch}" 2>&1)"; probe_rc=$?
             set -e
             if [ $probe_rc -eq 0 ]; then
               { echo "### Aborted — branch still exists"

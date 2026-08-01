@@ -34,8 +34,15 @@ echo "Fetching live refs for ${REPO}…"
 gh api "repos/${REPO}/branches" --paginate --jq '.[].name' > "$tmp/live.txt"
 # Open PR head refs too — a FORK PR's branch never appears in repos/$REPO/branches, so
 # without this its previews look orphaned and get deleted while the PR is still open.
-gh pr list --repo "$REPO" --state open --limit 1000 \
-  --json headRefName --jq '.[].headRefName' >> "$tmp/live.txt"
+# Exhaustive (paginated) — `gh pr list --limit N` truncates, and fork heads beyond
+# the cap would then look orphaned and be deleted while their PR is still open.
+gh api graphql --paginate -f owner="${REPO%/*}" -f name="${REPO#*/}" -f query='
+  query($owner:String!,$name:String!,$endCursor:String){
+    repository(owner:$owner,name:$name){
+      pullRequests(states:OPEN,first:100,after:$endCursor){
+        pageInfo{ hasNextPage endCursor }
+        nodes{ headRefName } } } }' \
+  --jq '.data.repository.pullRequests.nodes[].headRefName' >> "$tmp/live.txt"
 sort -u -o "$tmp/live.txt" "$tmp/live.txt"
 echo "  $(wc -l < "$tmp/live.txt") live refs (branches + open PR heads)"
 
