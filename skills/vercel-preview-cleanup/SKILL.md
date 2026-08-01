@@ -114,32 +114,40 @@ Installation is idempotent: if a workflow already exists, diff it and offer an u
 never clobber local edits without showing them first. Validate generated YAML
 (`actionlint` if available, otherwise a YAML parse) before writing.
 
-## Fork PRs
+## Fork PRs — the event path does NOT cover them
 
-A fork PR's branch lives in **the fork**, not your repo — so `on: delete` can never fire
-for it, and `repos/{owner}/{repo}/branches` will never list it. Two consequences:
+**Be clear about this before installing.** A fork PR's branch lives in *the fork*, so:
 
-1. **The sweep must not treat them as orphans.** Its "still live" set is
-   `repo branches ∪ every OPEN PR's head ref` (from `gh pr list --state open`, which
-   includes fork PRs). Without that union, an open fork PR's previews would be deleted
-   **mid-review** — the ref simply isn't in the branch list.
-2. **Cleanup triggers on PR close instead.** That's the only event that fires in *your*
-   repo for a fork PR. The `fork-pr` job is gated to forks only
-   (`head.repo.full_name != github.repository`) so non-fork PRs stay on the `on: delete`
-   path and aren't handled twice.
+- `on: delete` **never fires** for it — there is no ref in your repo to delete.
+- It never appears in `repos/{owner}/{repo}/branches`.
 
-> ⚠️ **Why `pull_request_target`, and why it's safe here.** A `pull_request` run from a
-> fork gets a read-only token and **no secrets**, so `VERCEL_TOKEN` would be empty and the
-> job could not work. `pull_request_target` runs in the base repo's context with secrets —
-> which is dangerous **if you check out fork code**. This workflow **never checks anything
-> out**: it reads `head.ref` (a string, passed via `env:`, never interpolated into a shell
-> command) and calls the Vercel API. That is the documented safe use of the trigger. If you
-> ever add `actions/checkout` to it, you have created an RCE — don't.
->
-> A malicious fork can't weaponise the branch *name* either: if the ref also exists in your
-> repo, the branch-still-exists check aborts before any deletion.
+The only trigger that *could* clean a fork PR's previews the moment it closes is
+**`pull_request_target`**, and this skill **deliberately does not use it**. That trigger
+runs with your secrets in the base repo's context; combined with a `VERCEL_TOKEN` that can
+delete deployments, it is a supply-chain surface — and one `actions/checkout` added by a
+later edit turns it into remote code execution. Not worth it for this feature. If your org
+accepts that trade-off, the wiring is a `pull_request_target: [closed]` job gated to
+`head.repo.full_name != github.repository`; adopt it knowingly, and **never check out fork
+code in it**.
 
-## Rolling out across many repos
+**What you actually get instead:**
+
+| Fork PR state | Behaviour |
+| --- | --- |
+| **Open** | previews are **protected** — the sweep's "still live" set is `repo branches ∪ every open PR head ref`, so an in-review fork PR's previews are never deleted (without this union they'd look like orphans and be swept mid-review) |
+| **Closed / merged** | the ref is neither a branch nor an open PR head → the **sweep collects it** on its next run |
+
+So forks *are* cleaned — just on the sweep's cadence (daily by default) rather than
+instantly. Two honest caveats:
+
+1. **Latency.** A fork PR's previews stay live until the next sweep. Tighten the cron if
+   that matters.
+2. **Flat-named fork branches are never swept.** GitHub's web editor defaults to
+   `patch-1`, which has no `/` and so fails the `*/*` include guard by design. Those
+   previews persist until Vercel's retention reaps them. Widening the pattern to catch
+   them would also expose your own flat trunks — not a trade worth making.
+
+## Rolling out across many repos## Rolling out across many repos
 
 - **Pin the reusable workflow to a tag or SHA, not `@main`.** It holds delete
   permissions; `@main` means every repo silently picks up any change to it.
@@ -155,7 +163,9 @@ for it, and `repos/{owner}/{repo}/branches` will never list it. Two consequences
 - **No cross-branch dependency check.** Deployments are immutable and branch-scoped —
   unlike branches, nothing else can depend on one. A later pass should not add a
   "does anything else use this deployment" guard; there is nothing to check.
-- ~~Fork PR deployments are never swept~~ — **now handled**, see below.
+- **No `pull_request_target`.** It's the only trigger that could clean fork PR previews
+  on close, and it runs with secrets in the base repo's context. Declined deliberately —
+  see "Fork PRs" above for what covers them instead.
 - **Retention is not a substitute.** It's an independent backstop with its own floor
   (last 10 project deployments, last 20 READY non-production, the latest preview of an
   *active* branch, …) and `deploymentsToKeep` is **production-only**. See

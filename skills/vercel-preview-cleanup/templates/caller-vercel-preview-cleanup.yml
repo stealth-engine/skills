@@ -7,8 +7,9 @@ name: Vercel preview cleanup
 
 on:
   delete:                      # NOTE: the delete event supports NO branch filter.
-  pull_request_target:         # fork PRs only — see the fork-pr job below
-    types: [closed]
+  # Deliberately NO pull_request_target. It is the only trigger that could clean fork
+  # PR previews on close, but it runs with secrets in the base repo's context — a
+  # supply-chain surface we decline. Fork previews are collected by the sweep instead.
   schedule:
     - cron: '17 4 * * *'       # daily reconciliation sweep (backstop)
   workflow_dispatch:
@@ -23,7 +24,7 @@ on:
         default: true
 
 concurrency:
-  group: vercel-preview-cleanup-${{ github.event.ref || github.event.pull_request.head.ref || 'sweep' }}
+  group: vercel-preview-cleanup-${{ github.event.ref || 'sweep' }}
   cancel-in-progress: false    # a half-finished sweep is worse than a redundant one
 
 jobs:
@@ -35,24 +36,6 @@ jobs:
       project_ids: ${{ vars.VERCEL_PROJECT_IDS }}
       team_id: ${{ vars.VERCEL_TEAM_ID }}
       branch: ${{ github.event.ref }}    # bare name — NOT refs/heads/*, don't strip a prefix
-      dry_run: false
-    permissions:
-      contents: read
-    secrets:
-      vercel_token: ${{ secrets.VERCEL_TOKEN }}
-
-  # FORK PRs: their branch lives in the fork, so `delete` never fires for it. The PR
-  # close event DOES fire here, so it is the only trigger that can clean them up.
-  # Non-fork PRs are excluded — `on: delete` already covers those.
-  fork-pr:
-    if: >-
-      github.event_name == 'pull_request_target' &&
-      github.event.pull_request.head.repo.full_name != github.repository
-    uses: stealth-engine/.github/.github/workflows/reusable-vercel-preview-cleanup.yml@main
-    with:
-      project_ids: ${{ vars.VERCEL_PROJECT_IDS }}
-      team_id: ${{ vars.VERCEL_TEAM_ID }}
-      branch: ${{ github.event.pull_request.head.ref }}
       dry_run: false
     permissions:
       contents: read
