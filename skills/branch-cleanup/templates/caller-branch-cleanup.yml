@@ -1,0 +1,55 @@
+# Per-repo caller. Copy to .github/workflows/branch-cleanup.yml
+#
+# Merged branches are handled by the repo's `delete_branch_on_merge` setting — NOT by
+# this workflow. The native setting is more reliable than an Action racing it. This
+# covers the two gaps it leaves: PRs closed WITHOUT merging, and orphans.
+name: Branch cleanup
+
+on:
+  pull_request:
+    types: [closed]
+  schedule:
+    - cron: '23 3 * * 1'      # weekly orphan sweep (report-only by default)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Log without deleting'
+        type: boolean
+        default: true
+      sweep_delete:
+        description: 'Let the sweep actually delete (default: report only)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: branch-cleanup-${{ github.event.pull_request.head.ref || 'sweep' }}
+  cancel-in-progress: false    # a half-finished sweep is worse than a redundant one
+
+jobs:
+  closed-unmerged:
+    # Only unmerged closures. Merged PRs are the native setting's job.
+    # Fork PRs are skipped inside the reusable workflow too (belt and braces).
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    uses: stealth-engine/.github/.github/workflows/reusable-branch-cleanup.yml@main
+    with:
+      branch: ${{ github.event.pull_request.head.ref }}
+      dry_run: false
+      grace_minutes: 0        # raise to ~10 if you adopt Graphite/ghstack/spr
+    permissions:
+      contents: write
+      pull-requests: read
+
+  sweep:
+    if: github.event_name != 'pull_request'
+    uses: stealth-engine/.github/.github/workflows/reusable-branch-cleanup.yml@main
+    with:
+      branch: ''              # empty = orphan sweep
+      dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+      sweep_delete: ${{ github.event_name == 'workflow_dispatch' && inputs.sweep_delete || false }}
+      grace_minutes: 0
+    permissions:
+      contents: write
+      pull-requests: read

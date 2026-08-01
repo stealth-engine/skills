@@ -1,0 +1,49 @@
+# Per-repo caller. Copy to .github/workflows/vercel-preview-cleanup.yml
+#
+# MUST live on the DEFAULT BRANCH: the `delete` event runs the workflow definition
+# from the default branch — the feature branch is already gone by then. This is also
+# why you cannot test it from a feature branch; use the workflow_dispatch dry run.
+name: Vercel preview cleanup
+
+on:
+  delete:                      # NOTE: the delete event supports NO branch filter.
+  schedule:
+    - cron: '17 4 * * *'       # daily reconciliation sweep (backstop)
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to clean (blank = reconciliation sweep)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Log without deleting'
+        type: boolean
+        default: true
+
+concurrency:
+  group: vercel-preview-cleanup-${{ github.event.ref || 'sweep' }}
+  cancel-in-progress: false    # a half-finished sweep is worse than a redundant one
+
+jobs:
+  on-branch-delete:
+    # Gate on ref_type: the delete event fires for TAGS too.
+    if: github.event_name == 'delete' && github.event.ref_type == 'branch'
+    uses: stealth-engine/.github/.github/workflows/reusable-vercel-preview-cleanup.yml@main
+    with:
+      project_ids: ${{ vars.VERCEL_PROJECT_IDS }}
+      team_id: ${{ vars.VERCEL_TEAM_ID }}
+      branch: ${{ github.event.ref }}    # bare name — NOT refs/heads/*, don't strip a prefix
+      dry_run: false
+    secrets:
+      vercel_token: ${{ secrets.VERCEL_TOKEN }}
+
+  sweep:
+    if: github.event_name != 'delete'
+    uses: stealth-engine/.github/.github/workflows/reusable-vercel-preview-cleanup.yml@main
+    with:
+      project_ids: ${{ vars.VERCEL_PROJECT_IDS }}
+      team_id: ${{ vars.VERCEL_TEAM_ID }}
+      branch: ${{ inputs.branch || '' }}
+      dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+    secrets:
+      vercel_token: ${{ secrets.VERCEL_TOKEN }}
