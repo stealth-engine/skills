@@ -111,7 +111,7 @@ Conventional Commits, or branch-name policy at all**. That gap is this skill's j
 passes [`branch-name-check.yml`](./templates/branch-name-check.yml) unchanged. Two forms
 don't, verified against the actual regex:
 
-```
+```text
 PASS  feature/auth              ← name layers explicitly; nothing to change
 FAIL  03-24-add_login           ← `gh stack add -Am "..."` auto-naming (date+slug)
 FAIL  auth-bugfix/reorder-args  ← Graphite's *documented* convention
@@ -124,17 +124,25 @@ or extend the regex if you adopt Graphite's `stack-name/change-name` convention.
 
 Actions evaluates workflow triggers against the **stack's base branch**, so
 `on: pull_request: branches: [main]` fires for every layer — no workflow changes needed,
-but the cost multiplies. Gate expensive jobs with `github.event.pull_request.stack`
-(**`null` on standalone PRs**, so always null-check first):
+but the cost multiplies. Gate expensive jobs with `github.event.pull_request.stack` —
+which is **`null` on a standalone PR**, so the null branch must **admit** the PR, not
+exclude it:
 
 ```yaml
-# lowest unmerged PR — it's the one whose own base IS the stack base
-if: github.event.pull_request.stack != null &&
+# standalone PR, OR the lowest unmerged layer (its own base IS the stack base)
+if: github.event.pull_request.stack == null ||
     github.event.pull_request.stack.base.ref == github.event.pull_request.base.ref
-# top PR — carries the full set of changes
-if: github.event.pull_request.stack != null &&
+# standalone PR, OR the top layer (carries the full set of changes)
+if: github.event.pull_request.stack == null ||
     github.event.pull_request.stack.position == github.event.pull_request.stack.size
 ```
+
+⚠️ **Write it as `== null || …`, never `!= null && …`.** GitHub's own docs show the
+`!= null &&` form on illustrative `echo` *steps*, where skipping non-stacked PRs is the
+point. Lift that same condition onto a **job** and every ordinary PR in the repo silently
+stops running it — a required check that never runs, on the normal path, for a feature
+most PRs don't even use. Invert the null case so standalone PRs always run and only
+*upper stack layers* are skipped.
 
 Fields: `stack.{id,number,size,position,base.ref,base.sha}`; `position` is 1-based from
 the bottom.
@@ -149,11 +157,14 @@ GitHub App can subscribe, `types: [stacked]` in a workflow cannot. Related: the 
 event **never** carries a `stack` object (a PR is created *before* it joins a stack), so
 any first-open logic sees `null`.
 
-### 3. PR titles are auto-generated — the normaliser matters more, not less
+### 3. PR titles are auto-generated in CI — the normaliser matters more, not less
 
-`gh stack submit` has **no flag to set a title or body** (documented limitation); they're
-generated from commit messages plus a footer, and `--auto` is required non-interactively
-(so agents always hit it), creating **drafts** unless `--open`. Since each layer
+Two modes, and **agents only ever get the second**. Interactively, `gh stack submit`
+opens an editor to write each PR's title, body and draft state. **Non-interactively it
+skips the editor and auto-generates titles** from commit messages plus a footer — `--auto`
+is implied in CI, and there is **no flag to set a title or body**, so the editor is the
+only way to set one. Auto-generated PRs are created as **drafts** unless `--open`
+(verified against `gh stack submit --help`, v0.1.0). Since each layer
 squash-merges into `main` as its own commit, each layer's title drives its own
 semantic-release bump. Keep layer commits conventional, and let
 [`pr-title-manager.yml`](./templates/pr-title-manager.yml) fix the rest — or `gh pr edit`
