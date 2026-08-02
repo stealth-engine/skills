@@ -1,0 +1,65 @@
+# Per-repo caller.
+#
+# ⚠️ BEFORE USE: replace YOUR-ORG and REPLACE-WITH-FULL-COMMIT-SHA. Pin to a FULL
+# COMMIT SHA — a tag is mutable and can be moved to point at different code.
+# This workflow forwards a delete-capable token to a workflow in another repo — with
+# `@main`, any change there (or a compromise of it) takes effect everywhere instantly.
+#
+# Copy to .github/workflows/vercel-preview-cleanup.yml
+#
+# MUST live on the DEFAULT BRANCH: the `delete` event runs the workflow definition
+# from the default branch — the feature branch is already gone by then. This is also
+# why you cannot test it from a feature branch; use the workflow_dispatch dry run.
+name: Vercel preview cleanup
+
+on:
+  delete:                      # NOTE: the delete event supports NO branch filter.
+  # Deliberately NO pull_request_target. It is the only trigger that could clean fork
+  # PR previews on close, but it runs with secrets in the base repo's context — a
+  # supply-chain surface we decline. Fork previews are collected by the sweep instead.
+  schedule:
+    - cron: '17 4 * * *'       # daily reconciliation sweep (backstop)
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to clean (blank = reconciliation sweep)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Log without deleting'
+        type: boolean
+        default: true
+
+concurrency:
+  group: vercel-preview-cleanup-${{ github.event.ref || 'sweep' }}
+  cancel-in-progress: false    # a half-finished sweep is worse than a redundant one
+
+jobs:
+  on-branch-delete:
+    # Gate on ref_type: the delete event fires for TAGS too.
+    if: github.event_name == 'delete' && github.event.ref_type == 'branch'
+    uses: YOUR-ORG/.github/.github/workflows/reusable-vercel-preview-cleanup.yml@REPLACE-WITH-FULL-COMMIT-SHA  # a tag is MUTABLE — only a full SHA is immutable
+    with:
+      project_ids: ${{ vars.VERCEL_PROJECT_IDS }}
+      team_id: ${{ vars.VERCEL_TEAM_ID }}
+      branch: ${{ github.event.ref }}    # bare name — NOT refs/heads/*, don't strip a prefix
+      dry_run: false
+    permissions:
+      contents: read        # list branches / verify the deleted branch is gone
+      pull-requests: read   # a called workflow cannot elevate — must be granted HERE
+    secrets:
+      vercel_token: ${{ secrets.VERCEL_TOKEN }}
+
+  sweep:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    uses: YOUR-ORG/.github/.github/workflows/reusable-vercel-preview-cleanup.yml@REPLACE-WITH-FULL-COMMIT-SHA  # a tag is MUTABLE — only a full SHA is immutable
+    with:
+      project_ids: ${{ vars.VERCEL_PROJECT_IDS }}
+      team_id: ${{ vars.VERCEL_TEAM_ID }}
+      branch: ${{ inputs.branch || '' }}
+      dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+    permissions:
+      contents: read        # list branches / verify the deleted branch is gone
+      pull-requests: read   # a called workflow cannot elevate — must be granted HERE
+    secrets:
+      vercel_token: ${{ secrets.VERCEL_TOKEN }}

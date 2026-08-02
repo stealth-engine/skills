@@ -1,0 +1,346 @@
+# Reusable workflow — host ONCE in the org's `.github` repo at
+#   .github/workflows/reusable-vercel-preview-cleanup.yml
+# Per-repo callers are ~15 lines (see caller-*.yml). Do not copy this per repo.
+#
+# Deletes preview deployments for a git branch that no longer exists.
+# Fully deterministic bash + curl. No agent, no model call at runtime.
+name: Reusable — Vercel preview cleanup
+
+on:
+  workflow_call:
+    inputs:
+      project_ids:
+        description: 'Comma-separated Vercel project IDs (monorepo → several).'
+        required: true
+        type: string
+      team_id:
+        description: 'Vercel team ID. Required for team-owned projects.'
+        required: true
+        type: string
+      branch:
+        description: 'Branch whose deployments to remove. Empty = reconciliation sweep.'
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        description: 'Log intended deletions without deleting.'
+        required: false
+        default: false
+        type: boolean
+      branch_include_pattern:
+        description: 'Only act on branches matching this glob. Default requires a
+          "/" so flat trunks (main, develop, staging, production) can never match.'
+        required: false
+        default: '*/*'
+        type: string
+      protected_branches:
+        description: 'Comma-separated globs never cleaned, even if they match the
+          include pattern (release/* and hotfix/* DO contain a slash).'
+        required: false
+        default: 'main,master,develop,dev,staging,production,release/*,hotfix/*'
+        type: string
+      delete_interval_seconds:
+        description: 'Seconds between deletes. Vercel allows 200 per 600s per team
+          = 1 per 3s sustained. Lower this only if you enjoy 429s.'
+        required: false
+        default: 3
+        type: number
+    secrets:
+      vercel_token:
+        description: 'Vercel access token with delete permission on the projects.'
+        required: true
+
+permissions: {}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read        # list branches / verify the deleted branch is gone
+      pull-requests: read   # open-PR head refs — protects live (incl. fork) PR previews
+    steps:
+      - name: Resolve target and apply branch guards
+        id: guard
+        env:
+          BRANCH: ${{ inputs.branch }}
+          INCLUDE: ${{ inputs.branch_include_pattern }}
+          PROTECTED: ${{ inputs.protected_branches }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BRANCH" ]; then
+            echo "mode=sweep" >> "$GITHUB_OUTPUT"
+            echo "Reconciliation sweep (no branch given)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # GUARD 1 — include pattern. Default '*/*' means "must contain a slash",
+          # which excludes main/master/develop/staging/production outright.
+          # shellcheck disable=SC2254
+          case "$BRANCH" in
+            $INCLUDE) ;;
+            *)
+              echo "mode=skip" >> "$GITHUB_OUTPUT"
+              { echo "### Skipped — branch guard"
+                echo "\`$BRANCH\` does not match include pattern \`$INCLUDE\`."
+                echo "Flat (non-\`a/b\`) branches are treated as trunks and never cleaned."
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0 ;;
+          esac
+
+          # GUARD 2 — protected denylist. Needed IN ADDITION to guard 1 because
+          # release/* and hotfix/* contain a slash and would otherwise pass.
+          IFS=',' read -ra PATS <<< "$PROTECTED"
+          for p in "${PATS[@]}"; do
+            p="$(echo "$p" | tr -d '[:space:]')"; [ -z "$p" ] && continue
+            # shellcheck disable=SC2254
+            case "$BRANCH" in
+              $p)
+                echo "mode=skip" >> "$GITHUB_OUTPUT"
+                { echo "### Skipped — protected branch"
+                  echo "\`$BRANCH\` matches protected pattern \`$p\`."
+                } >> "$GITHUB_STEP_SUMMARY"
+                exit 0 ;;
+            esac
+          done
+
+          echo "mode=branch" >> "$GITHUB_OUTPUT"
+          echo "Target branch: \`$BRANCH\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: List and delete preview deployments
+        if: steps.guard.outputs.mode != 'skip'
+        env:
+          VERCEL_TOKEN: ${{ secrets.vercel_token }}
+          TEAM_ID: ${{ inputs.team_id }}
+          PROJECT_IDS: ${{ inputs.project_ids }}
+          BRANCH: ${{ inputs.branch }}
+          MODE: ${{ steps.guard.outputs.mode }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          INTERVAL: ${{ inputs.delete_interval_seconds }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          INCLUDE: ${{ inputs.branch_include_pattern }}
+          PROTECTED: ${{ inputs.protected_branches }}
+        run: |
+          set -euo pipefail
+          API=https://api.vercel.com
+
+          # Same guards as the pre-flight step, re-applied per candidate ref so the
+          # sweep cannot delete what the event path is forbidden to delete.
+          passes_guards() {
+            local b="$1" p
+            [ -z "$b" ] && return 1
+            # shellcheck disable=SC2254
+            case "$b" in $INCLUDE) ;; *) return 1 ;; esac
+            IFS=',' read -ra pats <<< "$PROTECTED"
+            for p in "${pats[@]}"; do
+              p="$(echo "$p" | tr -d '[:space:]')"; [ -z "$p" ] && continue
+              # shellcheck disable=SC2254
+              case "$b" in $p) return 1 ;; esac
+            done
+            return 0
+          }
+          AUTH=(-H "Authorization: Bearer ${VERCEL_TOKEN}")
+          total_found=0; total_deleted=0; total_failed=0; total_kept=0
+
+          # In sweep mode, build the set of branches that still exist. Anything else
+          # is an orphan. --paginate because a repo can exceed 100 branches.
+          if [ "$MODE" = sweep ]; then
+            gh api "repos/${REPO}/branches" --paginate --jq '.[].name' > /tmp/live_refs.txt
+            # CRITICAL: also treat every OPEN PR's head ref as live. A FORK PR's branch
+            # lives in the fork, so it never appears in repos/$REPO/branches — without
+            # this it looks like an orphan and its previews get deleted while the PR is
+            # still open and under review. --limit 1000: gh pr list defaults to 30.
+            # Exhaustive (paginated) — a --limit cap would truncate and make the
+            # PRs beyond it look like orphans, deleting live fork previews.
+            gh api graphql --paginate -f owner="${REPO%/*}" -f name="${REPO#*/}" -f query='
+              query($owner:String!,$name:String!,$endCursor:String){
+                repository(owner:$owner,name:$name){
+                  pullRequests(states:OPEN,first:100,after:$endCursor){
+                    pageInfo{ hasNextPage endCursor }
+                    nodes{ headRefName } } } }' \
+              --jq '.data.repository.pullRequests.nodes[].headRefName' >> /tmp/live_refs.txt
+            sort -u -o /tmp/live_refs.txt /tmp/live_refs.txt
+            echo "Live refs (branches + open PR heads incl. forks): $(wc -l < /tmp/live_refs.txt)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # Branch mode: refuse to run against a branch that STILL EXISTS. `on: delete`
+          # guarantees it's gone, but workflow_dispatch does not — without this, a
+          # dispatch could wipe a live branch's previews including the aliased one.
+          if [ "$MODE" = branch ]; then
+            # '#' is LEGAL in git refs and gh treats it as a URL fragment, so a raw
+            # interpolation of `feature/foo#bar` probes `feature/foo` instead — a 404
+            # on that prefix would wrongly prove absence and delete a LIVE branch's
+            # deployments (the Vercel query below IS encoded). Encode '%' first.
+            enc_branch="$(printf '%s' "$BRANCH" | sed 's/%/%25/g; s/#/%23/g')"
+            set +e
+            probe="$(gh api "repos/${REPO}/branches/${enc_branch}" 2>&1)"; probe_rc=$?
+            set -e
+            if [ $probe_rc -eq 0 ]; then
+              { echo "### Aborted — branch still exists"
+                echo "\`$BRANCH\` is still present in \`$REPO\`. This job only cleans up"
+                echo "deployments for branches that are already deleted."
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            # FAIL CLOSED: only a definite 404 proves the branch is gone. Any other
+            # error (network, rate limit, 5xx, bad token) must NOT be read as absence.
+            case "$probe" in
+              *"Not Found"*|*"Branch not found"*) : ;;
+              *)
+                { echo "### Aborted — could not verify the branch is gone"
+                  echo "Lookup of \`$BRANCH\` failed with something other than 404, so"
+                  echo "absence is unproven. Failing closed rather than deleting."
+                  echo ""; echo '```'; echo "${probe}" | head -5; echo '```'
+                } >> "$GITHUB_STEP_SUMMARY"
+                exit 1 ;;
+            esac
+
+            # A fork PR can have the SAME head name as the deleted base-repo branch.
+            # Its deployments carry the same githubCommitRef, so deleting by ref would
+            # kill a live fork PR's previews. Skip if any OPEN PR uses this head.
+            fork_open="$(gh pr list --repo "$REPO" --head "$BRANCH" --state open \
+                          --limit 100 --json number --jq 'length' 2>/dev/null || echo ERR)"
+            if [ "$fork_open" = ERR ]; then
+              echo "### Aborted — could not check open PRs for this head (failing closed)" >> "$GITHUB_STEP_SUMMARY"; exit 1
+            fi
+            if [ "$fork_open" -gt 0 ]; then
+              { echo "### Skipped — an OPEN PR still uses \`$BRANCH\` as its head"
+                echo "Most likely a fork PR with the same branch name. Its previews are live."
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          fi
+
+          IFS=',' read -ra PROJECTS <<< "$PROJECT_IDS"
+          for PROJECT_ID in "${PROJECTS[@]}"; do
+            PROJECT_ID="$(echo "$PROJECT_ID" | tr -d '[:space:]')"; [ -z "$PROJECT_ID" ] && continue
+            echo "::group::project ${PROJECT_ID}"
+
+            # ---- LIST, paginating to exhaustion -------------------------------
+            # `target` is deliberately NOT sent: custom-environment deployments may
+            # not appear under target=preview. We filter client-side instead.
+            BASE="${API}/v7/deployments?projectId=${PROJECT_ID}&teamId=${TEAM_ID}&limit=100"
+            if [ "$MODE" = branch ]; then
+              BASE="${BASE}&branch=$(jq -rn --arg b "$BRANCH" '$b|@uri')"
+            fi
+            UNTIL=""; : > /tmp/candidates.txt
+            while :; do
+              URL="$BASE"; [ -n "$UNTIL" ] && URL="${URL}&until=${UNTIL}"
+              RESP="$(curl -sS --fail-with-body "${AUTH[@]}" "$URL")"
+
+              # HARD GUARD: never production. Preview deployments carry target=null,
+              # NOT "preview" — selecting .target=="preview" would match nothing.
+              # Also drop tombstones (delete is a soft delete; they reappear in lists).
+              jq -r --arg b "$BRANCH" '.deployments[]
+                     | select(.target != "production")
+                     | select((.readyState // .state) != "DELETED")
+                     # Cross-check the ref client-side — never trust the server filter alone.
+                     | select($b == "" or ((.meta.githubCommitRef // .meta.gitBranch // "") == $b))
+                     | [.uid, ((.meta.githubCommitRef // .meta.gitBranch // "-")), (.url // "")]
+                     | @tsv' <<<"$RESP" >> /tmp/candidates.txt
+
+              UNTIL="$(jq -r '.pagination.next // empty' <<<"$RESP")"
+              [ -z "$UNTIL" ] && break      # next === null is the ONLY end condition
+              sleep 0.1
+            done
+
+            # In sweep mode keep only deployments whose branch no longer exists,
+            # and re-apply both branch guards so the sweep can't do what the
+            # event path is forbidden to do.
+            if [ "$MODE" = sweep ]; then
+              : > /tmp/filtered.txt
+              while IFS=$'\t' read -r uid ref url; do
+                [ "$ref" = "-" ] && { total_kept=$((total_kept+1)); continue; }
+                if ! passes_guards "$ref"; then total_kept=$((total_kept+1)); continue; fi
+                if grep -qxF "$ref" /tmp/live_refs.txt; then
+                  total_kept=$((total_kept+1)); continue
+                fi
+                printf '%s\t%s\t%s\n' "$uid" "$ref" "$url" >> /tmp/filtered.txt
+              done < /tmp/candidates.txt
+              mv /tmp/filtered.txt /tmp/candidates.txt
+            fi
+
+            found=$(wc -l < /tmp/candidates.txt); total_found=$((total_found+found))
+            echo "found ${found} deletable deployment(s)"
+
+            # ---- DELETE, paced ------------------------------------------------
+            while IFS=$'\t' read -r uid ref url; do
+              [ -z "$uid" ] && continue
+              if [ "$DRY_RUN" = true ]; then
+                echo "DRY-RUN would delete ${uid} (${ref}) ${url}"
+                continue
+              fi
+              # TOCTOU: the live-ref snapshot (sweep) and the up-front branch checks
+              # (branch mode) both age while listing and pacing run — deletes are
+              # ${INTERVAL}s apart, so a long run spans minutes. Re-verify immediately
+              # before destroying each deployment, in BOTH modes: branch mode is not
+              # exempt just because it checked once at the start.
+              if [ -n "$ref" ] && [ "$ref" != "-" ]; then
+                enc_ref="$(printf '%s' "$ref" | sed 's/%/%25/g; s/#/%23/g')"
+                set +e
+                recheck="$(gh api "repos/${REPO}/branches/${enc_ref}" 2>&1)"; recheck_rc=$?
+                set -e
+                if [ "$recheck_rc" -eq 0 ]; then
+                  total_kept=$((total_kept+1))
+                  echo "::notice::${ref} was recreated during the sweep — keeping ${uid}"
+                  continue
+                fi
+                case "$recheck" in
+                  *"Not Found"*|*"Branch not found"*) : ;;   # still gone — proceed
+                  *)  # lookup failed for another reason: fail closed, keep it
+                    total_kept=$((total_kept+1))
+                    echo "::warning::could not re-verify ${ref} — keeping ${uid}"
+                    continue ;;
+                esac
+                # A FORK PR's head is never a branch here, so the check above cannot
+                # see it. Re-check open PR heads as well, or a fork PR opened during
+                # the sweep loses its previews. Fail closed on lookup error.
+                set +e
+                pr_live="$(gh pr list --repo "$REPO" --head "$ref" --state open \
+                             --limit 1 --json number --jq 'length' 2>/dev/null)"; pr_rc=$?
+                set -e
+                if [ $pr_rc -ne 0 ] || [ -z "$pr_live" ]; then
+                  total_kept=$((total_kept+1))
+                  echo "::warning::could not re-check open PRs for ${ref} — keeping ${uid}"
+                  continue
+                fi
+                if [ "$pr_live" -gt 0 ]; then
+                  total_kept=$((total_kept+1))
+                  echo "::notice::${ref} is now an open PR head — keeping ${uid}"
+                  continue
+                fi
+              fi
+              CODE="$(curl -sS -o /tmp/del.json -w '%{http_code}' -X DELETE \
+                "${AUTH[@]}" "${API}/v13/deployments/${uid}?teamId=${TEAM_ID}")"
+              case "$CODE" in
+                200|404|410) total_deleted=$((total_deleted+1));;   # 404/410 = already gone
+                429)
+                  # Documented limit: 200 deletes / 600s / team. Wait it out once.
+                  echo "::warning::rate limited; sleeping 60s"; sleep 60
+                  CODE="$(curl -sS -o /tmp/del.json -w '%{http_code}' -X DELETE \
+                    "${AUTH[@]}" "${API}/v13/deployments/${uid}?teamId=${TEAM_ID}")"
+                  case "$CODE" in 200|404|410) total_deleted=$((total_deleted+1));;
+                    *) total_failed=$((total_failed+1)); echo "::warning::${uid} failed (${CODE})";; esac ;;
+                *) total_failed=$((total_failed+1)); echo "::warning::${uid} failed (${CODE})";;
+              esac
+              sleep "$INTERVAL"
+            done < /tmp/candidates.txt
+            echo "::endgroup::"
+          done
+
+          { echo "### Vercel preview cleanup"
+            echo ""
+            echo "| | count |"
+            echo "| --- | --- |"
+            echo "| mode | \`${MODE}\` |"
+            echo "| dry run | \`${DRY_RUN}\` |"
+            echo "| candidates found | ${total_found} |"
+            echo "| deleted | ${total_deleted} |"
+            echo "| kept (live branch / no ref / flat) | ${total_kept} |"
+            echo "| failed | ${total_failed} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$total_found" -ge 200 ]; then
+            echo "::notice::Hit the 200-per-600s delete ceiling; the scheduled sweep will collect the remainder."
+          fi
+          [ "$total_failed" -eq 0 ]

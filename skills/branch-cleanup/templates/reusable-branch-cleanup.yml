@@ -1,0 +1,416 @@
+# Reusable workflow — host ONCE in the org's `.github` repo at
+#   .github/workflows/reusable-branch-cleanup.yml
+# Per-repo callers are ~15 lines. Do not copy this per repo.
+#
+# Deterministic bash + gh. No agent, no model call at runtime.
+#
+# SAFETY: never deletes a branch that any OPEN pull request targets as its BASE.
+# Deleting such a branch CLOSES those PRs — often unrecoverably. See
+# reference/github-facts.md §1.
+name: Reusable — branch cleanup
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        description: 'Branch to consider deleting. Empty = scheduled orphan sweep.'
+        required: false
+        default: ''
+        type: string
+      head_sha:
+        description: 'Event path: the head SHA AT CLOSE TIME
+          (github.event.pull_request.head.sha). Required for the
+          "no commits pushed after closure" guard — a closed PR''s headRefOid
+          TRACKS its branch, so it cannot be used to detect advancement.'
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        description: 'Log intended deletions without deleting.'
+        required: false
+        default: false
+        type: boolean
+      sweep_delete:
+        description: 'Sweep only: actually delete. Default false = report only.'
+        required: false
+        default: false
+        type: boolean
+      protected_branches:
+        description: 'Comma-separated globs never deleted.'
+        required: false
+        default: 'main,master,develop,dev,staging,production,release/*,hotfix/*'
+        type: string
+      excluded_patterns:
+        description: 'Extra globs to skip — e.g. stack-tool scratch refs (gt/*, spr/*).'
+        required: false
+        default: ''
+        type: string
+      grace_minutes:
+        description: 'Do not delete a branch whose PR closed less than N minutes ago.
+          Covers stack tooling (Graphite/ghstack/spr) that closes and REOPENS PRs during
+          a restack — a `closed` event is not proof of abandonment. 0 disables.
+          This is an AGE FILTER, never a sleep: inside the window the event path defers
+          to the scheduled sweep, which re-checks live state when it runs.'
+        required: false
+        default: 0
+        type: number
+      stale_days:
+        description: 'Sweep only: minimum age (last commit) for a branch that never had
+          a PR, before it is considered an orphan.'
+        required: false
+        default: 90
+        type: number
+
+permissions: {}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # delete refs
+      pull-requests: read    # the base-PR safety check
+    steps:
+      - name: Cleanup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          BRANCH: ${{ inputs.branch }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          SWEEP_DELETE: ${{ inputs.sweep_delete }}
+          PROTECTED: ${{ inputs.protected_branches }}
+          EXCLUDED: ${{ inputs.excluded_patterns }}
+          GRACE_MIN: ${{ inputs.grace_minutes }}
+          STALE_DAYS: ${{ inputs.stale_days }}
+        run: |
+          set -euo pipefail
+          deleted=0; skipped=0; blocked=0; failed=0
+          : > /tmp/report.txt
+
+          note() { printf '%s\n' "$1" >> /tmp/report.txt; }
+
+          is_protected() {
+            local b="$1" p
+            [ "$b" = "$DEFAULT_BRANCH" ] && return 0
+            IFS=',' read -ra pats <<< "${PROTECTED},${EXCLUDED}"
+            for p in "${pats[@]}"; do
+              p="$(echo "$p" | tr -d '[:space:]')"; [ -z "$p" ] && continue
+              # shellcheck disable=SC2254
+              case "$b" in $p) return 0 ;; esac
+            done
+            return 1
+          }
+
+          # THE non-negotiable guard. Deleting a branch that open PRs use as BASE
+          # closes those PRs. --limit 1000 because `gh pr list` defaults to 30, which
+          # would silently under-report a deep stack and let the guard pass wrongly.
+          GUARD_ERR=0
+          has_dependent_prs() {
+            local b="$1" n rc
+            GUARD_ERR=0
+            # `set -e` does NOT apply inside an if-condition, so check the exit code
+            # explicitly. An API failure (rate limit mid-sweep) must FAIL CLOSED:
+            # returning "no dependents" here would delete a branch and close its PRs.
+            set +e
+            n="$(gh pr list --repo "$REPO" --base "$b" --state open \
+                   --json number --limit 1000 --jq 'length' 2>/dev/null)"; rc=$?
+            set -e
+            if [ $rc -ne 0 ] || [ -z "$n" ]; then GUARD_ERR=1; return 0; fi
+            [ "$n" -gt 0 ]
+          }
+
+          # REAL ref-movement time. `committedDate` is author-controlled — a force-push
+          # to an older commit, a backdated committer date, or a branch recreated at an
+          # ancient commit all leave it looking older than the ref actually is. Echoes
+          # the newest activity timestamp (empty if the window records none) and returns
+          # NONZERO if the lookup itself failed, so every caller can fail closed.
+          #
+          # --method GET is REQUIRED: `gh api` switches to POST as soon as any -f/-F is
+          # present, and this endpoint is GET-only. Without it every call fails and the
+          # sweep silently skips every candidate — it would delete nothing at all.
+          # branch_creation counts: a deleted-then-recreated branch can have NO push
+          # activity (verified: refs here carry branch_creation/branch_deletion only).
+          # time_period is pinned rather than left to an unspecified default.
+          last_ref_activity() {
+            gh api --method GET "repos/${REPO}/activity" \
+              -f ref="refs/heads/$1" -f time_period=year -F per_page=100 \
+              --jq '[.[] | select(.activity_type == "push"
+                                 or .activity_type == "force_push"
+                                 or .activity_type == "branch_creation")
+                     | .timestamp] | sort | last // empty' 2>/dev/null
+          }
+
+          # EVERY deletion goes through here, so the guards cannot drift between the
+          # event path and the sweep (they did, repeatedly). All lookups FAIL CLOSED,
+          # and all are re-run at delete time — a snapshot taken earlier in a long
+          # sweep may be minutes stale.
+          delete_branch() {
+            local b="$1" expected_sha="${2:-}" not_after="${3:-}" out code n rc tip trc enc act arc
+            enc="$(printf '%s' "$b" | sed 's/%/%25/g; s/#/%23/g')"
+
+            # (a) no OPEN PR may use this branch as HEAD (may have opened mid-run)
+            set +e
+            n="$(gh pr list --repo "$REPO" --head "$b" --state open \
+                   --limit 100 --json number --jq 'length' 2>/dev/null)"; rc=$?
+            set -e
+            if [ $rc -ne 0 ] || [ -z "$n" ]; then
+              skipped=$((skipped+1)); note "| \`$b\` | ⛔ skipped — head-PR re-check failed (failing closed) |"; return 0
+            fi
+            if [ "$n" -gt 0 ]; then
+              skipped=$((skipped+1)); note "| \`$b\` | ⛔ skipped — an OPEN PR uses it as head |"; return 0
+            fi
+
+            # (b) no OPEN PR may use it as BASE — deleting would close those PRs
+            if has_dependent_prs "$b"; then
+              skipped=$((skipped+1))
+              if [ "$GUARD_ERR" = 1 ]; then
+                note "| \`$b\` | ⛔ skipped — base-PR re-check failed (failing closed) |"
+              else
+                note "| \`$b\` | ⛔ skipped — open PRs target it as BASE |"
+              fi
+              return 0
+            fi
+
+            # (c) the tip must still be the SHA we made the decision on
+            if [ -n "$expected_sha" ]; then
+              set +e
+              tip="$(gh api "repos/${REPO}/git/ref/heads/${enc}" --jq '.object.sha' 2>&1)"; trc=$?
+              set -e
+              if [ $trc -ne 0 ]; then
+                case "$tip" in
+                  *"Not Found"*) deleted=$((deleted+1)); note "| \`$b\` | already gone (success) |"; return 0 ;;
+                  *) skipped=$((skipped+1)); note "| \`$b\` | ⛔ skipped — tip re-check failed (failing closed) |"; return 0 ;;
+                esac
+              fi
+              if [ "$tip" != "$expected_sha" ]; then
+                skipped=$((skipped+1)); note "| \`$b\` | skipped — new commits pushed since the decision |"; return 0
+              fi
+            fi
+
+            # (d) the ref must not have been RECREATED since the decision. (c) compares
+            # only the tip SHA, which is blind to a delete-then-recreate at the SAME
+            # commit — precisely what GitHub's "Restore branch" button does, and about
+            # as clear a "someone wants this branch back" signal as exists. A ref's
+            # identity is not its SHA alone; recreation is real activity.
+            if [ -n "$not_after" ]; then
+              set +e; act="$(last_ref_activity "$b")"; arc=$?; set -e
+              if [ $arc -ne 0 ]; then
+                skipped=$((skipped+1)); note "| \`$b\` | ⛔ skipped — ref-activity re-check failed (failing closed) |"; return 0
+              fi
+              if [ -n "$act" ] && [ "$(date -u -d "$act" +%s)" -ge "$not_after" ]; then
+                skipped=$((skipped+1)); note "| \`$b\` | skipped — ref pushed or recreated since the decision |"; return 0
+              fi
+            fi
+            if [ "$DRY_RUN" = true ]; then
+              note "| \`$b\` | DRY-RUN would delete |"; return 0
+            fi
+            set +e
+            # $enc was computed at the top: '%' encoded FIRST (else we corrupt our own
+            # escapes). '?' is illegal in git refs, so only '%' and '#' can appear.
+            out="$(gh api -X DELETE "repos/${REPO}/git/refs/heads/${enc}" 2>&1)"; code=$?
+            set -e
+            if [ $code -eq 0 ]; then
+              deleted=$((deleted+1)); note "| \`$b\` | deleted |"; return 0
+            fi
+            # 422 is overloaded — branch on the MESSAGE, not the status code.
+            case "$out" in
+              *"Reference does not exist"*)
+                deleted=$((deleted+1)); note "| \`$b\` | already gone (success) |" ;;
+              *"Cannot delete this protected ref"*|*"Repository rule violations"*)
+                blocked=$((blocked+1))
+                note "| \`$b\` | 🔒 BLOCKED by a ruleset — needs a human, do not retry |" ;;
+              *"Resource not accessible"*)
+                blocked=$((blocked+1))
+                note "| \`$b\` | 🔒 token lacks permission — needs a human |" ;;
+              *) failed=$((failed+1)); note "| \`$b\` | failed: ${out//|/ } |" ;;
+            esac
+          }
+
+          now=$(date -u +%s)
+
+          # ---------- EVENT PATH: one branch, from a closed-unmerged PR ----------
+          if [ -n "$BRANCH" ]; then
+            if [ -z "$HEAD_SHA" ]; then
+              # Refuse rather than delete with the tip-freshness guard disabled.
+              skipped=$((skipped+1))
+              note "| \`$BRANCH\` | ⛔ skipped — no close-time \`head_sha\` supplied (failing closed) |"
+            elif is_protected "$BRANCH"; then
+              skipped=$((skipped+1)); note "| \`$BRANCH\` | skipped — protected |"
+            else
+              # Re-query LIVE PR state; never trust the webhook payload. It is a
+              # snapshot and the run may have queued. Catches a restack reopen.
+              # OPEN PRs queried separately: with --state all, >100 closed records for
+              # a reused branch could push an open one out of the page and hide it.
+              open_n="$(gh pr list --repo "$REPO" --head "$BRANCH" --state open \
+                          --limit 100 --json number --jq 'length')"
+              prs="$(gh pr list --repo "$REPO" --head "$BRANCH" --state closed \
+                       --json state,closedAt,isCrossRepository,headRefOid --limit 100)"
+              state="$(jq -c 'sort_by(.closedAt // "") | last' <<<"$prs")"
+              if [ "$prs" = "[]" ] && [ "${open_n:-0}" -eq 0 ]; then
+                skipped=$((skipped+1)); note "| \`$BRANCH\` | skipped — no PR found |"
+              elif [ "${open_n:-0}" -gt 0 ]; then
+                # Covers both a restack reopen AND a second open PR from the same head.
+                skipped=$((skipped+1)); note "| \`$BRANCH\` | skipped — an OPEN PR still uses this branch as head |"
+              elif [ "$(jq -r '.isCrossRepository' <<<"$state")" = true ]; then
+                skipped=$((skipped+1)); note "| \`$BRANCH\` | skipped — fork PR |"
+              elif has_dependent_prs "$BRANCH"; then
+                skipped=$((skipped+1))
+                if [ "$GUARD_ERR" = 1 ]; then
+                  note "| \`$BRANCH\` | ⛔ skipped — base-PR check FAILED (failing closed) |"
+                else
+                  note "| \`$BRANCH\` | ⛔ skipped — open PRs target it as BASE (deleting would close them) |"
+                fi
+              else
+                closed_at="$(jq -r '.closedAt // empty' <<<"$state")"
+                age=$(( (now - $(date -u -d "${closed_at:-@$now}" +%s)) / 60 ))
+                if [ "${GRACE_MIN:-0}" -gt 0 ] && [ "$age" -lt "$GRACE_MIN" ]; then
+                  skipped=$((skipped+1))
+                  note "| \`$BRANCH\` | deferred to sweep — closed ${age}m ago, grace ${GRACE_MIN}m |"
+                else
+                  # The close-time SHA comes from the webhook payload. A closed PR's
+                  # headRefOid TRACKS its branch, so comparing it against the live tip
+                  # can never differ — that comparison was dead code.
+                  # Closure time is the recreation reference: any ref activity at or
+                  # after it means someone touched the branch post-close.
+                  delete_branch "$BRANCH" "$HEAD_SHA" \
+                    "$(date -u -d "${closed_at:-@$now}" +%s)"
+                fi
+              fi
+            fi
+          # ---------- SWEEP PATH: find orphans ----------
+          else
+            gh api graphql --paginate -f owner="${REPO%/*}" -f name="${REPO#*/}" -f query='
+              query($owner:String!,$name:String!,$endCursor:String){
+                repository(owner:$owner,name:$name){
+                  refs(refPrefix:"refs/heads/",first:100,after:$endCursor){
+                    pageInfo{ hasNextPage endCursor }
+                    nodes{ name
+                      target{ ... on Commit { committedDate oid } }
+                      openPRs: associatedPullRequests(states:OPEN){ totalCount }
+                      allPRs: associatedPullRequests(first:100){ nodes{ state closedAt isCrossRepository } } } } } }' \
+              --jq '.data.repository.refs.nodes[]
+                    | [ .name,
+                        (.target.committedDate // "-"),
+                        (.target.oid // "-"),
+                        ([.allPRs.nodes[].state] | join(",") | if . == "" then "-" else . end),
+                        ([.allPRs.nodes[].closedAt // empty] | sort | last // "-"),
+                        ([.allPRs.nodes[].isCrossRepository] | any | tostring),
+                        (.openPRs.totalCount | tostring) ]
+                    | @tsv' > /tmp/branches.tsv
+
+            while IFS=$'\t' read -r name committed tip_oid states last_closed is_fork open_count; do
+              [ -z "$name" ] && continue
+              if is_protected "$name"; then skipped=$((skipped+1)); continue; fi
+              if [ "$is_fork" = true ]; then skipped=$((skipped+1)); continue; fi
+              # EXACT open count (totalCount on a states:OPEN connection) — the 100-node
+              # page below can truncate for a heavily reused branch and hide an OPEN PR.
+              if [ "${open_count:-0}" != 0 ]; then skipped=$((skipped+1)); continue; fi
+              case "$states" in *OPEN*) skipped=$((skipped+1)); continue ;; esac
+
+              if [ "$states" = "-" ]; then
+                # Never had a PR — only sweep once genuinely stale. (Sentinel "-", not
+                # empty: empty @tsv fields collapse under IFS=$'\t' and shift columns.)
+                [ "$committed" = "-" ] && { skipped=$((skipped+1)); continue; }
+                # Age from the LATER of the commit date and real ref movement. A branch
+                # recreated today at an ancient commit — restoring lost work, rescuing a
+                # deleted branch — has an old `committedDate` and would otherwise be
+                # swept on the day it was created. The PR-history path below has always
+                # consulted activity; this path used to trust `committedDate` alone.
+                set +e; last_act="$(last_ref_activity "$name")"; act_rc=$?; set -e
+                if [ $act_rc -ne 0 ]; then
+                  skipped=$((skipped+1))
+                  note "| \`$name\` | ⛔ skipped — ref-activity lookup failed, cannot age the branch (failing closed) |"
+                  continue
+                fi
+                ref_ts=$(date -u -d "$committed" +%s)
+                if [ -n "$last_act" ]; then
+                  act_ts=$(date -u -d "$last_act" +%s)
+                  [ "$act_ts" -gt "$ref_ts" ] && ref_ts=$act_ts
+                fi
+                age_d=$(( (now - ref_ts) / 86400 ))
+                [ "$age_d" -lt "$STALE_DAYS" ] && { skipped=$((skipped+1)); continue; }
+              else
+                # The branch has PR history. If it has COMMITS NEWER than its last PR
+                # closure, someone resumed work without opening a new PR — deleting
+                # would discard it. This is the sweep's equivalent of the event path's
+                # tip-SHA guard, which otherwise only protects the closed-PR route.
+                if [ "$last_closed" != "-" ]; then
+                  closed_ts=$(date -u -d "$last_closed" +%s)
+
+                  # (i) Real ref movement since the closure — see last_ref_activity.
+                  set +e; last_push="$(last_ref_activity "$name")"; act_rc=$?; set -e
+                  if [ $act_rc -ne 0 ]; then
+                    skipped=$((skipped+1))
+                    note "| \`$name\` | ⛔ skipped — push-history lookup failed, cannot prove no post-closure work (failing closed) |"
+                    continue
+                  fi
+                  # -ge, not -gt: activity landing in the SAME second as the closure is
+                  # ambiguous about ordering, so treat it as post-closure and keep the
+                  # branch. A false keep costs nothing; a false delete loses work.
+                  if [ -n "$last_push" ] \
+                     && [ "$(date -u -d "$last_push" +%s)" -ge "$closed_ts" ]; then
+                    skipped=$((skipped+1))
+                    note "| \`$name\` | skipped — ref pushed after the last PR closed |"
+                    continue
+                  fi
+                  # If the closure predates the queried window, push history cannot
+                  # cover the gap — don't pretend it did. Fail closed.
+                  if [ "$closed_ts" -lt "$(( now - 31536000 ))" ]; then
+                    skipped=$((skipped+1))
+                    note "| \`$name\` | ⛔ skipped — PR closed over a year ago, outside the push-history window (failing closed) |"
+                    continue
+                  fi
+
+                  # (ii) committedDate as a secondary signal only. Either indicator
+                  # firing is enough to keep the branch.
+                  if [ "$committed" != "-" ] \
+                     && [ "$(date -u -d "$committed" +%s)" -ge "$closed_ts" ]; then
+                    skipped=$((skipped+1))
+                    note "| \`$name\` | skipped — commits dated after the last PR closed |"
+                    continue
+                  fi
+                fi
+                if [ "${GRACE_MIN:-0}" -gt 0 ] && [ "$last_closed" != "-" ]; then
+                  age_m=$(( (now - $(date -u -d "$last_closed" +%s)) / 60 ))
+                  [ "$age_m" -lt "$GRACE_MIN" ] && { skipped=$((skipped+1)); continue; }
+                fi
+              fi
+
+              # Stack safety applies on EVERY deletion path, sweep included.
+              if has_dependent_prs "$name"; then
+                skipped=$((skipped+1))
+                if [ "$GUARD_ERR" = 1 ]; then
+                  note "| \`$name\` | ⛔ skipped — base-PR check FAILED (failing closed) |"
+                else
+                  note "| \`$name\` | ⛔ skipped — open PRs target it as BASE |"
+                fi
+                continue
+              fi
+
+              if [ "$SWEEP_DELETE" = true ]; then
+                # Pass the snapshot tip AND the sweep's start time: delete_branch
+                # re-reads both and refuses if the branch advanced — or was recreated
+                # at the same commit — while this (paced) sweep was running.
+                delete_branch "$name" "$tip_oid" "$now"
+              else
+                note "| \`$name\` | would delete (sweep is report-only; set sweep_delete: true) |"
+              fi
+              sleep 1     # stacks collapse in bursts; stay clear of secondary rate limits
+            done < /tmp/branches.tsv
+          fi
+
+          { echo "### Branch cleanup"
+            echo ""
+            echo "mode: \`${BRANCH:-sweep}\` · dry-run: \`${DRY_RUN}\`"
+            echo ""
+            echo "| branch | outcome |"
+            echo "| --- | --- |"
+            cat /tmp/report.txt
+            echo ""
+            echo "deleted **${deleted}** · skipped **${skipped}** · blocked **${blocked}** · failed **${failed}**"
+            [ "$blocked" -gt 0 ] && echo ""
+            [ "$blocked" -gt 0 ] && echo "> 🔒 Blocked branches need a human (ruleset or token permission) — retrying will not help."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          [ "$failed" -eq 0 ]
