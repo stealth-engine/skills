@@ -1,10 +1,10 @@
 ---
 name: git-trunk-branch-and-pr-automation
-description: "Trunk-based Git workflow with enforced branch naming and squash-merge PR titles. Use when setting up or standardising a branch/PR workflow, naming branches (feature/ fix/ hotfix/ and AI-agent prefixes claude/ cursor/ codex/ copilot/ codegen-bot/ dependabot/), configuring squash-only merges where the PR title becomes the commit and the body is the concatenated commits, making the PR title a valid Conventional Commit, adding GitHub Actions that validate branch names or auto-normalise PR titles, fixing a PR-title bot that loops, or deciding trunk vs release branches. Covers the GitHub repo settings, the validation/normalisation workflows, and how it feeds semantic-release."
+description: "Trunk-based Git workflow with enforced branch naming and squash-merge PR titles, including how stacked PRs fit it. Use when setting up or standardising a branch/PR workflow, naming branches (feature/ fix/ hotfix/ and AI-agent prefixes claude/ cursor/ codex/ copilot/ codegen-bot/ dependabot/), configuring squash-only merges where the PR title becomes the commit and the body is the concatenated commits, making the PR title a valid Conventional Commit, adding GitHub Actions that validate branch names or auto-normalise PR titles, fixing a PR-title bot that loops, or deciding trunk vs release branches. Also use for stacked / dependent PRs — GitHub's native stacks (gh stack), Graphite (gt) or Cursor Origin — when stack layers fail branch-name checks, CI cost multiplies across a stack, a workflow condition on base.ref stops matching, gh pr merge fails on a stack, or you need github.event.pull_request.stack metadata. Covers the GitHub repo settings, the validation/normalisation workflows, and how it feeds semantic-release."
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "1.2.0"
+  version: "1.3.0"
 ---
 
 # Trunk-based branches + squash-PR automation
@@ -81,6 +81,115 @@ The opt-out is a **label, not a string in the title**, on purpose: the PR title 
 the squash commit semantic-release reads, so any marker left in the title would land in
 the release commit and silently produce **no release**. The label is also ignored on
 the fork/bot validate path (it never edits there, so there's nothing to suppress).
+
+## Stacked PRs — the other shape a trunk workflow can take
+
+Stacking is now first-class: **GitHub native** (public preview 2026-07-30, `gh stack`),
+**Graphite** (`gt`), and **Cursor Origin**. A stack is a chain of branches where each PR's
+base is the layer below it, and the chain lands on `main`. It's still trunk-based — the
+same short-lived-branch, squash-to-`main` model — just decomposed. Agents produce many
+small dependent changes, so expect more of it.
+
+**Don't learn the CLI from this skill — install the vendor's:**
+
+| Tool | Agent skill | CLI |
+| --- | --- | --- |
+| GitHub | `gh skill install github/gh-stack` | `gh extension install github/gh-stack` |
+| Graphite | [`withgraphite/agent-skills`](https://github.com/withgraphite/agent-skills) → `skills/graphite/SKILL.md` | `gt` |
+
+Stacked PRs need **`gh` ≥ 2.90.0** (GitHub's stated minimum). `gh skill` is a **newer
+subcommand than the extension** — it's absent on older builds (verified missing on
+2.45.0, where `gh extension install` still works fine). Check `gh --version` before
+telling anyone to run either.
+
+Those skills cover the CLI thoroughly and **neither mentions Actions, webhooks,
+Conventional Commits, or branch-name policy at all**. That gap is this skill's job:
+
+### 1. Branch names — mostly fine, two real breaks
+
+`gh stack` uses names **verbatim** (slashes allowed), so `gh stack add feature/auth`
+passes [`branch-name-check.yml`](./templates/branch-name-check.yml) unchanged. Two forms
+don't, verified against the actual regex:
+
+```text
+PASS  feature/auth              ← name layers explicitly; nothing to change
+FAIL  03-24-add_login           ← `gh stack add -Am "..."` auto-naming (date+slug)
+FAIL  auth-bugfix/reorder-args  ← Graphite's *documented* convention
+```
+
+So: **name each layer with a valid prefix** (`feature/auth-layer`, `feature/auth-api`),
+or extend the regex if you adopt Graphite's `stack-name/change-name` convention.
+
+### 2. CI runs for **every** PR in the stack — a 5-layer stack is 5× the CI
+
+Actions evaluates workflow triggers against the **stack's base branch**, so
+`on: pull_request: branches: [main]` fires for every layer — no workflow changes needed,
+but the cost multiplies. Gate expensive jobs with `github.event.pull_request.stack` —
+which is **`null` on a standalone PR**, so the null branch must **admit** the PR, not
+exclude it:
+
+```yaml
+# standalone PR, OR the lowest unmerged layer (its own base IS the stack base)
+if: github.event.pull_request.stack == null ||
+    github.event.pull_request.stack.base.ref == github.event.pull_request.base.ref
+# standalone PR, OR the top layer (carries the full set of changes)
+if: github.event.pull_request.stack == null ||
+    github.event.pull_request.stack.position == github.event.pull_request.stack.size
+```
+
+⚠️ **Write it as `== null || …`, never `!= null && …`.** GitHub's own docs show the
+`!= null &&` form on illustrative `echo` *steps*, where skipping non-stacked PRs is the
+point. Lift that same condition onto a **job** and every ordinary PR in the repo silently
+stops running it — a required check that never runs, on the normal path, for a feature
+most PRs don't even use. Invert the null case so standalone PRs always run and only
+*upper stack layers* are skipped.
+
+Fields: `stack.{id,number,size,position,base.ref,base.sha}`; `position` is 1-based from
+the bottom.
+
+⚠️ **`github.event.pull_request.base.ref` is the layer below, not the trunk.** Any `if:`
+you wrote comparing it to `'main'` silently stops matching for every layer except the
+bottom. Use `stack.base.ref` for "what does this ultimately target".
+
+⚠️ **`stacked` is a webhook action, not an Actions activity type.** It fires when a PR
+joins a stack, but it is **not** in the `pull_request` types list Actions accepts — a
+GitHub App can subscribe, `types: [stacked]` in a workflow cannot. Related: the `opened`
+event **never** carries a `stack` object (a PR is created *before* it joins a stack), so
+any first-open logic sees `null`.
+
+### 3. PR titles are auto-generated in CI — the normaliser matters more, not less
+
+Two modes, and **agents only ever get the second**. Interactively, `gh stack submit`
+opens an editor to write each PR's title, body and draft state. **Non-interactively it
+skips the editor and auto-generates titles** from commit messages plus a footer — `--auto`
+is implied in CI, and there is **no flag to set a title or body**, so the editor is the
+only way to set one. Auto-generated PRs are created as **drafts** unless `--open`
+(verified against `gh stack submit --help`, v0.1.0). Since each layer
+squash-merges into `main` as its own commit, each layer's title drives its own
+semantic-release bump. Keep layer commits conventional, and let
+[`pr-title-manager.yml`](./templates/pr-title-manager.yml) fix the rest — or `gh pr edit`
+after submit.
+
+**One logical change per layer** is the same rule as one-change-per-PR, and it matters
+more here: five layers produce five commits on `main`.
+
+### 4. Merging a stack is a different command
+
+**`gh pr merge` does not work on a stacked PR** — use `gh stack merge --yes`, which merges
+bottom-to-top **atomically** (all-or-nothing). Pass `--squash` to keep the squash
+convention; without a method flag it reuses the last-used one. It checks only that PRs are
+open and non-draft — your required checks and branch protection still apply and still
+block, and **bypassing merge requirements is not supported for stacks**.
+
+With a **merge queue**, the stack is enqueued instead: the queue picks the method (any
+`--squash` you pass is **ignored with a warning**) and layers may land in **separate
+groups** rather than together.
+
+### 5. Never delete a mid-stack branch
+
+Deleting a branch that open PRs use as their **base closes those PRs**. That's the whole
+stack above it. See [`branch-cleanup`](../branch-cleanup/SKILL.md), which refuses exactly
+this.
 
 ## Gotchas
 

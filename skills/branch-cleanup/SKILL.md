@@ -1,10 +1,10 @@
 ---
 name: branch-cleanup
-description: "Install GitHub Actions workflows that delete stale git branches safely — the closed-without-merging path plus a scheduled orphan sweep — and enable the native delete_branch_on_merge setting that handles merged PRs. Host-agnostic: no Vercel, Neon or any external service required, works in any GitHub repo. Never deletes a branch that open PRs target as their BASE (that would CLOSE those PRs and destroy a stack). Use when asked to clean up / delete stale, merged, abandoned or orphaned branches, stop branches piling up, auto-delete branches after merge, enable delete_branch_on_merge across an org, add a branch retention or sweep workflow, or safely prune branches in a repo that uses stacked PRs (Graphite / ghstack / spr)."
+description: "Install GitHub Actions workflows that delete stale git branches safely — the closed-without-merging path plus a scheduled orphan sweep — and enable the native delete_branch_on_merge setting that handles merged PRs. Host-agnostic: no Vercel, Neon or any external service required, works in any GitHub repo. Never deletes a branch that open PRs target as their BASE (that would CLOSE those PRs and destroy a stack). Use when asked to clean up / delete stale, merged, abandoned or orphaned branches, stop branches piling up, auto-delete branches after merge, enable delete_branch_on_merge across an org, add a branch retention or sweep workflow, or safely prune branches in a repo that uses stacked PRs — GitHub's native stacks (gh stack), Graphite, ghstack or spr."
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Branch cleanup
@@ -84,11 +84,15 @@ Beyond the base-PR guard:
   sweep, which re-checks live state when it runs. Sleeping in the job would bill Actions
   minutes for every closed PR to do nothing. Cost: cleanup latency becomes
   `grace_minutes + sweep interval`. **Default 0** — no stack tooling was found in these
-  repos; set it to ~10 if you adopt Graphite/ghstack/spr.
+  repos; set it to ~10 if you adopt **GitHub's native stacks (`gh stack`)**, Graphite,
+  ghstack or spr. Native stacks restack the same way: merging a lower layer rebases and
+  retargets every layer above it, so upper branches move without any human touching them.
 - **Live re-query, always on.** The webhook payload is a snapshot and the run may have
   queued, so PR state is re-read at delete time even at `grace_minutes: 0`.
 - **`excluded_patterns`** for stack-tool scratch refs (`gt/*`, `spr/*`).
 - Stacks merge bottom-up in **bursts**; the sweep paces itself between deletions.
+  `gh stack merge` lands a whole stack **atomically**, so an N-layer stack can produce N
+  near-simultaneous closures — exactly the burst the pacing exists for.
 
 ## Other guards
 

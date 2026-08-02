@@ -45,7 +45,10 @@ jobs:
       branch: ${{ github.event.pull_request.head.ref }}
       head_sha: ${{ github.event.pull_request.head.sha }}   # immutable close-time SHA
       dry_run: false
-      grace_minutes: 0        # raise to ~10 if you adopt Graphite/ghstack/spr
+      # Raise to ~10 if you adopt ANY stack tooling — GitHub's native stacks
+      # (`gh stack`), Graphite, ghstack or spr. All of them restack by force-pushing and
+      # can close/reopen PRs mid-flight, so a `closed` event is not proof of abandonment.
+      grace_minutes: 0
     permissions:
       contents: write
       pull-requests: read

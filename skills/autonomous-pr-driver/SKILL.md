@@ -1,10 +1,10 @@
 ---
 name: autonomous-pr-driver
-description: "Autonomously drive a pull request to merge-ready — opening or attaching to it, then resolving automated code review (triage findings, fix the valid, reject the invalid, push, loop) and pinging a human to merge. Knows when to STOP: at diminishing returns (niche/trivial/contradictory findings, severity trending down, or review budget accruing) it declares the PR good-to-merge on substance and pauses rather than auto-looping to chase a bot to zero comments — resuming only if the user insists or a genuinely important finding appears. Use when asked to 'drive / ship / land this PR', 'get the PR green', 'resolve the PR review comments', 'address the CodeRabbit / Cursor / Bugbot / Codex findings', 'fix the code review and push', 'stop over-fixing / merge it', or to loop on PR reviews until checks pass."
+description: "Autonomously drive a pull request to merge-ready — opening or attaching to it, then resolving automated code review (triage findings, fix the valid, reject the invalid, push, loop) and pinging a human to merge. Knows when to STOP: at diminishing returns (niche/trivial/contradictory findings, severity trending down, or review budget accruing) it declares the PR good-to-merge on substance and pauses rather than auto-looping to chase a bot to zero comments — resuming only if the user insists or a genuinely important finding appears. Use when asked to 'drive / ship / land this PR', 'get the PR green', 'resolve the PR review comments', 'address the CodeRabbit / Cursor / Bugbot / Codex findings', 'fix the code review and push', 'stop over-fixing / merge it', or to loop on PR reviews until checks pass. Covers stacked PRs, where gh pr merge fails and gh stack merge lands the stack atomically."
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "1.6.0"
+  version: "1.7.0"
 ---
 
 # Autonomous PR driver
@@ -78,6 +78,29 @@ cadence + @-tag behaviour snapshot).
    stopped at **diminishing returns** (not zero-findings), say so: state it's good to
    merge on substance, give the evidence + recommendation, and **pause the loop**
    until the user decides — don't auto-start another round.
+   **On a stacked PR, `gh pr merge` does not work** — see below.
+
+### Stacked PRs need a different merge command (and a different convergence unit)
+
+If the PR belongs to a stack (`github.event.pull_request.stack != null`, or the PR page
+shows a stack map), **`gh pr merge` fails** — GitHub's documented rule. Merge with
+`gh stack merge --yes [--squash]`, which lands the stack **bottom-to-top atomically**:
+all-or-nothing, so *one* unmergeable layer blocks every layer. With a **merge queue** the
+stack is enqueued instead, the queue overrides your merge method (any `--squash` is
+ignored with a warning), and layers can land in **separate groups**.
+
+Two consequences for this loop:
+
+- **Convergence is per-layer, but merge is per-stack.** Don't hand off "ready to merge"
+  on one green layer while a lower one is red — the merge will refuse. Check the whole
+  stack.
+- **A fix pushed to a lower layer restacks everything above it**, giving every upper PR a
+  new HEAD and re-triggering their reviewers. Batch fixes down-stack before pushing, or
+  you multiply the review spend by the stack depth.
+
+Detail and the CI-cost fields (`stack.position`/`size`) live in
+[`git-trunk-branch-and-pr-automation`](../git-trunk-branch-and-pr-automation/SKILL.md);
+the CLI itself is covered by GitHub's own `gh skill install github/gh-stack`.
 
 ## Triage every finding → valid / invalid / stale
 
