@@ -105,7 +105,11 @@ SHA=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)
 #     tested for stability; that logic drew a defect in four consecutive review rounds
 #     while protecting against something whose remedy is simply "wait longer". If you
 #     need determinism, assert your own required check names before watching instead.
-sleep "${GRACE:-90}"
+GRACE=${GRACE:-90}
+case "$GRACE" in ''|*[!0-9]*) echo "GRACE must be a non-negative integer" >&2; exit 1 ;; esac
+# Without `set -e` (deliberately not set — see below), a failed `sleep` would fall
+# straight through to --watch with NO registration delay, silently losing the guard.
+sleep "$GRACE" || { echo "sleep failed — no registration delay, failing closed" >&2; exit 1; }
 # (c) NO --fail-fast: it means "exit watch mode on first check FAILURE", so one early red
 #     returns while everything else is still pending — triaging mid-run, which this
 #     section forbids. You want every result, including the slow ones.
@@ -134,6 +138,14 @@ case "$rc" in
   124) echo "watch hit the deadline — NOT settled (failing closed)" >&2; exit 1 ;;
   *)   echo "gh pr checks errored (rc=$rc) — failing closed" >&2; exit 1 ;;
 esac
+# (f) THE HEAD CAN MOVE WHILE YOU WAIT. Everything downstream — reviewer-reported-on-HEAD,
+#     open findings, the status table — must describe ONE commit. If someone pushed during
+#     the wait, the checks you just watched belong to the old head while your evidence
+#     queries would read the new one. Re-validate and restart rather than mix the two.
+NOW=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid) || NOW=""
+if [ -z "$NOW" ] || [ "$NOW" != "$SHA" ]; then
+  echo "head moved ${SHA:0:7} -> ${NOW:-?} during the wait — restart, do not triage" >&2; exit 1
+fi
 ```
 
 `--watch` refreshes every 10s server-side (`-i` to change) and returns when checks
