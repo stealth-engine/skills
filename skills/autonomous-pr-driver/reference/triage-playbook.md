@@ -98,12 +98,33 @@ SHA=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)
 #     yet; `gh pr checks` reports "no checks reported" and EXITS rather than waiting — a
 #     false "settled" while CI is still starting. An auth/network failure must not read
 #     as "zero checks", so distinguish an empty result from a failed lookup.
-registered=0
-for _ in $(seq 1 12); do
+#     "At least one check exists" is NOT proof they all do. Measured on this repo, a
+#     skipped check registered at 08:18:01 while the last reviewer status appeared at
+#     08:18:53 — a 52s spread. Firing on the first arrival lets --watch return having
+#     only ever seen the quick one. So: wait out a GRACE window AND require the count to
+#     stop growing. If you know the check names, EXPECTED is strictly more reliable.
+GRACE=${GRACE:-90}          # seconds to keep looking after the first check appears
+EXPECTED=${EXPECTED:-}      # optional: newline-separated names that MUST be present
+registered=0; first_seen=0; last=-1
+for _ in $(seq 1 24); do
   cr=$(gh api "repos/$REPO/commits/$SHA/check-runs" --jq '.check_runs|length' 2>/dev/null) || cr=""
   st=$(gh api "repos/$REPO/commits/$SHA/status"     --jq '.statuses|length'   2>/dev/null) || st=""
-  if [ -n "$cr" ] && [ -n "$st" ] && [ $(( cr + st )) -gt 0 ]; then registered=1; break; fi
-  sleep 10          # empty ⇒ lookup failed (not "zero") ⇒ retry rather than conclude
+  if [ -n "$cr" ] && [ -n "$st" ]; then         # empty ⇒ lookup FAILED, not "zero"
+    n=$(( cr + st ))
+    if [ "$n" -gt 0 ]; then
+      [ "$first_seen" = 0 ] && first_seen=$(date +%s)
+      if [ -n "$EXPECTED" ]; then               # deterministic path
+        have=$( { gh api "repos/$REPO/commits/$SHA/check-runs" --jq '.check_runs[].name' 2>/dev/null
+                  gh api "repos/$REPO/commits/$SHA/status"     --jq '.statuses[].context' 2>/dev/null; } | sort -u)
+        missing=$(comm -23 <(printf '%s\n' "$EXPECTED" | sort -u) <(printf '%s\n' "$have"))
+        [ -z "$missing" ] && { registered=1; break; }
+      elif [ "$n" -eq "$last" ] && [ $(( $(date +%s) - first_seen )) -ge "$GRACE" ]; then
+        registered=1; break                     # stable AND past the grace window
+      fi
+      last=$n
+    fi
+  fi
+  sleep 10
 done
 # Nothing registered, or the probe never succeeded → do NOT enter --watch: it would exit
 # "no checks reported" and read as settled. Fall back to rung 3, or hand off via rung 4.

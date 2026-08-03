@@ -26,20 +26,21 @@
     surface, so you must ask for it explicitly:
 
     ```bash
-    CODEX='chatgpt-codex-connector[bot]'    # EXACT login (quoted: [] is glob syntax) — see the two traps below
-    HEAD=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)
+    # `gh api` takes --jq <expr> but does NOT forward arbitrary jq CLI flags: passing
+    # `--arg` fails with "accepts 1 arg(s), received 4", so the query never runs and
+    # Codex looks silent — the exact false-negative this check exists to prevent.
+    # Use exported vars + `env.` (the convention already used elsewhere in this file).
+    export CODEX='chatgpt-codex-connector[bot]'   # EXACT login, not a substring match
+    export HEAD=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)
 
-    # Trap 1: match the login EXACTLY. A substring/`test("codex")` match accepts a 👍
-    # from any human or app whose login merely contains "codex".
-    # Trap 2: $COMMENT_ID must be the CURRENT review trigger, not an older one.
+    # Completion reaction. $COMMENT_ID must be the CURRENT trigger, not an older one.
     gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" --paginate \
-      --jq --arg c "$CODEX" '[.[] | select(.user.login == $c) | .content] | index("+1") != null'
+      --jq '[.[] | select(.user.login == env.CODEX) | .content] | index("+1") != null'
 
-    # Reviews: scope to the CURRENT HEAD. Without the commit_id filter an older pass
-    # reads as a report on this commit, defeating the current-HEAD convergence gate.
+    # Reviews, scoped to the CURRENT HEAD — without it an older pass reads as a report
+    # on this commit and defeats the current-HEAD convergence gate.
     gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
-      --jq --arg c "$CODEX" --arg h "$HEAD" \
-      '.[] | select(.user.login == $c and .commit_id == $h) | .state'
+      --jq '.[] | select(.user.login == env.CODEX and .commit_id == env.HEAD) | .state'
     ```
 
     Check reactions **before** concluding it stayed silent: a 👍 means reviewed-and-clean,
