@@ -19,11 +19,16 @@ export HEAD=$(gh pr view $PR --repo $REPO --json headRefOid --jq .headRefOid)
 # on each push, so this can count a reviewer who last commented on an EARLIER push as
 # "on HEAD" — don't treat it as sufficient alone. Pair with the bot's check completing
 # on HEAD (convergence gate 1) before accepting a reviewer as having weighed in.
-{ gh api repos/$REPO/pulls/$PR/reviews  --paginate --jq '.[]|select(.commit_id==env.HEAD)|.user.login'
-  gh api repos/$REPO/pulls/$PR/comments --paginate --jq '.[]|select(.commit_id==env.HEAD)|.user.login'
-} | sort -u   # the set of reviewers that have weighed in on the current HEAD
-              # (a leading `; }` here is a SYNTAX ERROR — the previous newline already
-              #  terminated the command, so the `;` has no command before it.)
+# CAPTURE EACH LOOKUP SEPARATELY, don't pipe a brace group into `sort -u`. A pipeline
+# takes the status of its LAST command, so `{ failing-gh; gh; } | sort -u` exits 0 and a
+# failed lookup arrives as an EMPTY reviewer set — read as "nobody has reviewed HEAD",
+# which is the fail-open this file forbids ("a failed lookup is missing evidence, never
+# silence"). `set -o pipefail` would also work but isn't POSIX; this is portable.
+rvw=$(gh api "repos/$REPO/pulls/$PR/reviews"  --paginate --jq '.[]|select(.commit_id==env.HEAD)|.user.login') \
+  || { echo "reviews lookup FAILED — missing evidence, not silence" >&2; exit 1; }
+cmt=$(gh api "repos/$REPO/pulls/$PR/comments" --paginate --jq '.[]|select(.commit_id==env.HEAD)|.user.login') \
+  || { echo "review-comments lookup FAILED — missing evidence, not silence" >&2; exit 1; }
+printf '%s\n%s\n' "$rvw" "$cmt" | sort -u   # reviewers that have weighed in on HEAD
 
 # (b) OPEN FINDINGS = every UNRESOLVED review thread — regardless of which commit it
 # was anchored to or when it was posted. THIS is the source of truth for "what's left
