@@ -122,7 +122,11 @@ fi
 #     NONZERO for settled-but-red (1) and for pending (8), so under a `set -e` driver an
 #     unguarded call ABORTS THE RUN on exactly the outcome you were waiting to triage.
 #     (The rung-3 comment below already documents these codes; rung 2 has to honour them.)
-set +e; $TO gh pr checks "$PR" --repo "$REPO" --watch; rc=$?; set -e
+#     Capture it WITHOUT touching the caller's shell: `set -e` is suppressed inside an
+#     if-condition, so no set +e/set -e dance is needed — and an unconditional `set -e`
+#     would switch errexit ON for a caller that never asked for it (this recipe gets
+#     pasted into interactive shells), where a later no-match `grep` then kills it.
+if $TO gh pr checks "$PR" --repo "$REPO" --watch; then rc=0; else rc=$?; fi
 case "$rc" in
   0)   : ;;   # settled, all green
   1)   : ;;   # settled WITH FAILURES — a result to triage, not an error to abort on
