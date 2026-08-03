@@ -42,8 +42,8 @@ cadence + @-tag behaviour snapshot).
    | Rung | Mechanism | Available where |
    | --- | --- | --- |
    | 1 | **Host event watcher** — a background watcher that notifies you on each new comment / check result | Harnesses that can wake an agent mid-turn (e.g. Claude Code's `Monitor`) |
-   | 2 | **`gh pr checks --watch`** — blocks until checks finish (`--fail-fast`, `-i <secs>`) | **Anywhere with a shell + network.** No inbound, no harness support |
-   | 3 | Poll on a **≥30s** interval | Last resort — burns turns |
+   | 2 | **`gh pr checks --watch`** (wrap in `timeout`; **never** `--fail-fast`) — blocks until checks finish | **Anywhere with a shell + network.** No inbound, no harness support — **unless a human gate is pending** |
+   | 3 | Poll on a **≥30s** interval, excluding gates by name | Last resort — burns turns, but the **only** rung that can ignore a human gate |
    | 4 | **Don't wait at all** — post the status table and hand off | Sandboxes/CI with a wall-clock cap you'd hit |
 
    Rung 2 is the portable default and gets you most of rung 1 for nothing. Rung 4 is a
@@ -51,6 +51,15 @@ cadence + @-tag behaviour snapshot).
    hand-off beats a truncated loop. Webhooks aren't on this ladder on purpose — they
    only pay off in a harness that can wake the agent, and any harness that can do that
    already has rung 1.
+
+   **Two ways rung 2 betrays this step, both verified against `gh`:**
+   - **`--fail-fast` means "exit on first check *failure*"** — it returns while other
+     checks are still pending, which is triaging mid-run, the thing this step forbids.
+     Don't use it here.
+   - **`--watch` waits for *every* check, including a human gate** that by definition
+     never finishes on its own — and `gh pr checks` has **no per-check exclusion flag**
+     (only `--required`). On a repo with a pending gate, rung 2 blocks on precisely the
+     check "settled" tells you to ignore. Drop to **rung 3**, which filters by name.
 
    ⚠️ **A green check can mean "I didn't look."** Read the check's *description*, not
    just its colour. CodeRabbit reports `state=success` with

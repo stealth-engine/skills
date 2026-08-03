@@ -89,7 +89,11 @@ not the default.**
 
 ```bash
 # Rung 2 — portable, no harness support needed. Blocks until checks finish.
-gh pr checks "$PR" --repo "$REPO" --watch --fail-fast
+# NO --fail-fast: it means "exit watch mode on first check FAILURE", so one early red
+# returns while everything else is still pending — triaging mid-run, which this section
+# forbids. You want every result, including the slow ones.
+# timeout is a hard stop: --watch has no deadline of its own (see the human-gate trap).
+timeout 1800 gh pr checks "$PR" --repo "$REPO" --watch
 ```
 
 `--watch` refreshes every 10s server-side (`-i` to change) and returns when checks
@@ -104,6 +108,22 @@ green-but-never-reviewed case is visible:
 CodeQL       pass  2s   https://…
 CodeRabbit   pass  0         Review rate limited     ← green, and NOT reviewed
 ```
+
+**⛔ The human-gate trap — check this before choosing rung 2.** `--watch` waits for
+**every** check to finish, and a human-gated approver (e.g. Cursor Approval Agent) stays
+`pending` until a person acts. This section defines settled as *"nothing pending except
+human gates"*, so on those repos `--watch` blocks on exactly the check you're meant to
+ignore — indefinitely, until the `timeout` fires.
+
+Verified: `gh pr checks` has **no per-check exclusion flag at all**. The complete filter
+set is `--required`, `--fail-fast`, `-i`, `--watch`, `--web`. So:
+
+- **No human gate on this repo?** Rung 2 as written. This is the common case.
+- **Human gate, and it is _not_ a required check?** Add `--required` — but know the cost:
+  it also hides any reviewer check that isn't required (CodeRabbit often isn't), so you
+  can return before that reviewer has finished.
+- **Human gate that _is_ required?** Rung 2 can't express this. **Skip to rung 3** — the
+  loop below excludes gates by name, which is the only way to do it.
 
 Limitation: it watches **only checks**. It won't wake you for a new review comment, and
 a comment-only reviewer (Codex posts no check at all) is invisible to it. Pair it with a
