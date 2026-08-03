@@ -133,7 +133,19 @@ fi
 if $TO gh pr checks "$PR" --repo "$REPO" --watch; then rc=0; else rc=$?; fi
 case "$rc" in
   0)   : ;;   # settled, all green
-  1)   : ;;   # settled WITH FAILURES — a result to triage, not an error to abort on
+  1)   # AMBIGUOUS — gh returns 1 for a failing check AND for ordinary command errors.
+       # Verified: a nonexistent PR, an unknown repo and a bad flag ALL exit 1, so
+       # accepting 1 blindly treats an API error (or "no checks reported") as a finished
+       # red build and walks straight into triage. Confirm against the rollup first.
+       all=$( { gh api "repos/$REPO/commits/$SHA/check-runs" --paginate --jq '.check_runs[]|.status' 2>/dev/null
+                gh api "repos/$REPO/commits/$SHA/status"     --paginate --jq '.statuses[]|.state'  2>/dev/null; } )
+       if [ -z "$all" ]; then
+         echo "rc=1 and the rollup is empty/unreadable — command error, not a red build; failing closed" >&2; exit 1
+       fi
+       if printf '%s\n' "$all" | grep -qE '^(queued|in_progress|pending)$'; then
+         echo "rc=1 but checks are still pending — not settled; failing closed" >&2; exit 1
+       fi
+       ;;   # confirmed: checks exist, all finished, some red → triage
   8)   echo "still pending after watch — NOT settled (failing closed)" >&2; exit 1 ;;
   124) echo "watch hit the deadline — NOT settled (failing closed)" >&2; exit 1 ;;
   *)   echo "gh pr checks errored (rc=$rc) — failing closed" >&2; exit 1 ;;
