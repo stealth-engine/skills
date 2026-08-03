@@ -95,8 +95,11 @@ cadence + @-tag behaviour snapshot).
    ⚠️ **Some reviewers post no check at all** — they only ever appear as review
    comments. For those, *silence is not evidence of a clean review*: there is no
    pending indicator, so "still working" and "reviewed, found nothing" look identical.
-   You cannot wait on them deterministically. Bound the wait by time, then proceed and
-   **say in the hand-off that they never reported** — don't quietly count them as clean.
+   You cannot wait on them deterministically. **Check for a non-check completion signal
+   before declaring silence** — Codex's observed "nothing to report" signal is a 👍
+   *reaction*, invisible to every check query (recipe in `known-bots.md`). If there's
+   neither a finding nor a reaction, bound the wait by time, then proceed and **say in
+   the hand-off that they never reported** — don't quietly count them as clean.
    (Verified on this repo: Codex has no status check on any PR; the rollup shows only
    CodeQL/Analyze/CodeRabbit. It was also the **highest-signal reviewer** across a
    12-round PR — so "wait for the checks to go green" systematically under-weights it.)

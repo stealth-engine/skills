@@ -20,9 +20,20 @@
   - **Check-backed** (CodeRabbit, sometimes Greptile) — a status check exists, so
     pending vs finished is visible. You can wait on it. **But read the description**:
     CodeRabbit's green can say `"Review rate limited"`, meaning it never looked.
-  - **Comment-only** (Codex) — **no check at all.** No pending state, no completion
-    signal. "Still thinking" and "found nothing" are indistinguishable, so absence of
-    findings proves nothing. Bound the wait by time, then proceed and **disclose it**.
+  - **Comment-only** (Codex) — **no status check at all**, so nothing in the check
+    rollup ever tells you it started or finished. Its one *observed* completion signal
+    is a **👍 reaction** when it has nothing to report — which no check query will ever
+    surface, so you must ask for it explicitly:
+
+    ```bash
+    gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" --jq '.[]|.content'
+    gh api "repos/$REPO/pulls/$PR/reviews" --jq '.[]|select(.user.login|test("codex"))|.state'
+    ```
+
+    Check reactions **before** concluding it stayed silent: a 👍 means reviewed-and-clean,
+    while genuine silence stays ambiguous ("still thinking" and "found nothing" look
+    identical). If neither a finding nor a reaction has arrived, bound the wait by time,
+    proceed, and **disclose that it never reported** — don't score it as clean.
 
   The trap: the *most* useful reviewer on this repo is the *least* observable one, so a
   loop that waits for "all checks green" silently under-weights it.

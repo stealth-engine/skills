@@ -89,11 +89,29 @@ not the default.**
 
 ```bash
 # Rung 2 — portable, no harness support needed. Blocks until checks finish.
-# NO --fail-fast: it means "exit watch mode on first check FAILURE", so one early red
-# returns while everything else is still pending — triaging mid-run, which this section
-# forbids. You want every result, including the slow ones.
-# timeout is a hard stop: --watch has no deadline of its own (see the human-gate trap).
-timeout 1800 gh pr checks "$PR" --repo "$REPO" --watch
+#
+# (a) WAIT FOR REGISTRATION FIRST. Straight after a push no check run exists yet, and
+#     `gh pr checks` reports "no checks reported" and exits instead of waiting — a false
+#     "settled" while CI is still starting. Probe via the REST API, which every gh
+#     version has (see the --json warning below).
+SHA=$(git rev-parse HEAD)
+for _ in $(seq 1 12); do
+  n=$(( $(gh api "repos/$REPO/commits/$SHA/check-runs" --jq '.check_runs|length' 2>/dev/null || echo 0) \
+      + $(gh api "repos/$REPO/commits/$SHA/status"     --jq '.statuses|length'   2>/dev/null || echo 0) ))
+  [ "$n" -gt 0 ] && break
+  sleep 10
+done
+# (b) NO --fail-fast: it means "exit watch mode on first check FAILURE", so one early red
+#     returns while everything else is still pending — triaging mid-run, which this
+#     section forbids. You want every result, including the slow ones.
+# (c) `timeout` is GNU coreutils and is ABSENT on stock macOS/BSD — hard-coding it makes
+#     this "portable" rung die with `command not found`. Detect it; degrade, don't fail.
+TO=""
+command -v timeout  >/dev/null 2>&1 && TO="timeout 1800"
+[ -z "$TO" ] && command -v gtimeout >/dev/null 2>&1 && TO="gtimeout 1800"
+# No deadline available → still run, but you MUST have ruled out the human-gate trap
+# below, since that is what an unbounded --watch hangs on.
+$TO gh pr checks "$PR" --repo "$REPO" --watch
 ```
 
 `--watch` refreshes every 10s server-side (`-i` to change) and returns when checks
@@ -132,7 +150,24 @@ comment sweep after it returns.
 If the harness has an event watcher (rung 1) that streams new comments *and* check
 results, prefer that — it covers both signals at once.
 
-Fall back to the loop below only when neither is available:
+Fall back to the loop below only when neither is available.
+
+> ⚠️ **`gh pr checks --json` is NOT available on every `gh`.** Verified: on `gh 2.45.0`
+> it is `unknown flag: --json` — the whole flag set is `--fail-fast --required
+> --interval --watch --web`. Because the loop below fails closed on empty output, an
+> older `gh` makes it **spin every iteration and never settle**, then time out — it
+> looks like slow CI, not a broken command. If you need one snippet that works on any
+> version, read check state from the **REST API** instead, which is stable across gh
+> releases:
+>
+> ```bash
+> gh api "repos/$REPO/commits/$SHA/check-runs" \
+>   --jq '.check_runs[] | "\(.name)\t\(.status)\t\(.conclusion // "-")"'
+> gh api "repos/$REPO/commits/$SHA/status" \
+>   --jq '.statuses[]  | "\(.context)\t\(.state)\t\(.description)"'   # description ⇒ rate-limit trap
+> ```
+>
+> Check `gh pr checks --help` for `--json` before relying on the loop below.
 
 ```bash
 settled=0
@@ -143,6 +178,8 @@ for i in $(seq 1 50); do
   # JSON (pending → exit 8, documented; failing → exit 1 per gh source) — so `|| true`
   # keeps the captured stdout (don't clobber it to ""). Only a genuinely empty result
   # (a real gh/network failure) is treated as "not settled".
+  # ⚠️ Requires a gh with `--json` on `pr checks` — see the warning above; on an older
+  # gh this is always empty and the loop can never settle.
   checks=$(gh pr checks $PR --repo $REPO --json name,bucket 2>/dev/null) || true
   if [ -n "$checks" ]; then
     # Count REAL (non-human-gate) checks: how many registered, how many still pending.
