@@ -1,20 +1,88 @@
 # Known review bots — behaviour snapshot
 
-> **Snapshot as of 2026-07.** These are *known examples*, not an exhaustive list.
+> **Snapshot as of 2026-08** (rows verified 2026-07 unless a note says 2026-08). These are *known examples*, not an exhaustive list.
 > Treat any reviewer not listed here with the general method in
 > [`triage-playbook.md`](./triage-playbook.md), and **add it here once you've learned
 > its behaviour**. Bots change — re-verify if reality diverges from this table.
 
 | Bot | Posts as | Finding ID | Re-review cadence | Learns from @-mention? | @-handle | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| **CodeRabbit** | `coderabbitai[bot]` | `cr-comment:v1:<hash>` (per-comment; `fingerprinting:` is a non-unique category — don't dedup on it) | **auto-per-push** | **Yes** | `@coderabbitai` | Re-scans HEAD on mention, confirms resolution, records persistent **Learnings** so it won't re-raise. The one bot worth teaching. Never needs a re-trigger tag — it re-reviews every push itself. **Has a CLI *and* the hosted bot — don't run both against the same commit** (they duplicate analysis and consumption). Incremental review runs on **every push** and can spend a **review allowance** per run; its summary re-states the whole set as "Actionable comments posted: N" each time, so a repeated N is usually the *same* set re-presented, not N new defects — **batch fixes into one push per round** (see "Minimise review triggers" in the playbook). CLI: `coderabbit review --agent`. |
+| **CodeRabbit** | `coderabbitai[bot]` | `cr-comment:v1:<hash>` (per-comment; `fingerprinting:` is a non-unique category — don't dedup on it) | **auto-per-push** | **Yes** | `@coderabbitai` | Re-scans HEAD on mention, confirms resolution, records persistent **Learnings** so it won't re-raise. The one bot worth teaching. Never needs a re-trigger tag — it re-reviews every push itself. **Has a CLI *and* the hosted bot — don't run both against the same commit** (they duplicate analysis and consumption). Incremental review runs on **every push** and can spend a **review allowance** per run; its summary re-states the whole set as "Actionable comments posted: N" each time, so a repeated N is usually the *same* set re-presented, not N new defects — **batch fixes into one push per round** (see "Minimise review triggers" in the playbook). CLI: `coderabbit review --agent`. ⚠️ **Its status check can be green WITHOUT a review having happened** — `state=success` with `description="Review rate limited"` (vs `"Review completed"`). Verified 2026-08. Always read the description; a rate-limited commit has NOT been reviewed, and the tick looks identical. |
 | **Cursor Bugbot** | `cursor[bot]` | `BUGBOT_BUG_ID: <uuid>` | **auto-per-push** | **No (observed)** | — | Re-posts the *same* `BUGBOT_BUG_ID` against new line numbers every push, including long-fixed ones. Dedup by the id; don't tag it (no learning, no re-trigger needed). Ships "Fix in Cursor/Web" deep-links. Severity: Low/Medium/High. |
-| **Cursor Approval Agent** | `cursor[bot]` | — | n/a (human gate) | n/a | — | A **human-gate**: posts "requesting human review from <user>", stays `pending`/flips to pass. Exclude from the "settled" check so it never blocks the loop. |
+| **Cursor Approval Agent** | `cursor[bot]` | — | n/a (human gate) | n/a | — | A **human-gate**: posts "requesting human review from <user>", stays `pending`/flips to pass. Exclude from the "settled" check so it never blocks the loop. ⚠️ **This row disqualifies `gh pr checks --watch`** (rung 2): `--watch` waits for every check and `gh` has **no per-check exclusion flag** (verified — only `--required`), so a pending gate blocks it until your `timeout`. On a repo with a human gate, use the name-filtering poll loop instead. |
 | **blocksorg** | `blocksorg[bot]` | none (use rule+file) | **auto-per-push (observed)** | **No (observed)** | — | "Severity N" findings; re-posts resolved ones across rounds. Caught a real fork-PR RCE once, so don't dismiss blindly — verify, then dedup. |
-| **Codex** | `chatgpt-codex-connector[bot]` | `P1`/`P2` badges | **inconsistent / high-latency** (observed 2026-07: re-reviewed one push **unprompted** within minutes, yet on another PR had **not** re-posted ~8 min after an explicit `@codex review`) — assume neither a push nor a tag guarantees a *timely* re-review | Unverified | `@codex` *(re-trigger observed 2026-07)* | Posts suggestions as a review with P-badged findings; **reacts 👍 when it has nothing** / is satisfied. Responds to `@codex review` / `@codex address`. Re-trigger with `@codex review` when you need its sign-off and it hasn't re-posted — but its push/tag re-review timing is inconsistent, so don't chase it: record its findings and move on. Whether a teaching reply changes its future reviews is still unverified. |
+| **Codex** | `chatgpt-codex-connector[bot]` | `P1`/`P2` badges | **inconsistent / high-latency** (observed 2026-07: re-reviewed one push **unprompted** within minutes, yet on another PR had **not** re-posted ~8 min after an explicit `@codex review`) — assume neither a push nor a tag guarantees a *timely* re-review | Unverified | `@codex` *(re-trigger observed 2026-07)* | Posts suggestions as a review with P-badged findings; **reacts 👍 when it has nothing** / is satisfied. Responds to `@codex review` / `@codex address`. Re-trigger with `@codex review` when you need its sign-off and it hasn't re-posted — but its push/tag re-review timing is inconsistent, so don't chase it: record its findings and move on. Whether a teaching reply changes its future reviews is still unverified. **Posts NO status check** (verified 2026-08 across two PRs — the rollup carried only CodeQL/Analyze/CodeRabbit while Codex posted full reviews). So you get no pending indicator and **no *check-based* completion signal** — but it does have one signal: the **👍 reaction**, which means reviewed-and-clean (bind it to this round's trigger — recipe under Observability). Only with *neither* a finding *nor* that reaction is it genuine silence, and genuine silence stays ambiguous. Bound the wait by time and disclose at hand-off that it didn't report. Worth the patience — on a 12-round PR it was the **highest-signal reviewer**, still surfacing verified-real defects after convergence had twice been (wrongly) declared. |
 
 ## How to use this
 
+- **Observability — a third axis, and the one that breaks waiting.** Cadence tells you
+  *when* a bot re-reviews; observability tells you whether you can **see** it happen:
+  - **Check-backed** (CodeRabbit, sometimes Greptile) — a status check exists, so
+    pending vs finished is visible. You can wait on it. **But read the description**:
+    CodeRabbit's green can say `"Review rate limited"`, meaning it never looked.
+  - **Comment-only** (Codex) — **no status check at all**, so nothing in the check
+    rollup ever tells you it started or finished. Its one *observed* completion signal
+    is a **👍 reaction** when it has nothing to report — which no check query will ever
+    surface, so you must ask for it explicitly:
+
+    ```bash
+    export CODEX='chatgpt-codex-connector[bot]'   # EXACT login — a substring match
+                                                  # accepts any login containing "codex"
+    HEAD=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid) || HEAD=""
+    [ -n "$HEAD" ] || { echo "no HEAD — that is missing evidence, not silence" >&2; exit 1; }
+    export HEAD
+
+    # Emit FLAT LISTS and test them in the shell. Do NOT let the jq expression return the
+    # boolean: under --paginate it runs once PER PAGE, so you would get "false\ntrue".
+    # (`--slurp` aggregates, but is absent on older gh — verified missing on 2.45.0.)
+    # $COMMENT_ID MUST be the trigger for THIS review round. Reactions carry no commit
+    # association, so a 👍 left on an older @codex review reads as a clean review of the
+    # current HEAD. Bind the pair AT POST TIME: when you post the trigger, record its
+    # comment id and the head SHA it was posted against (COMMENT_ID / TRIGGER_SHA below),
+    # and reject the reaction if HEAD has moved since.
+    # Do NOT infer freshness from timestamps: a commit's author/committer date says
+    # nothing about when it became the head, so a commit cherry-picked before an older
+    # trigger but pushed after it still reads as "newer" and revives that stale 👍.
+    # With no recorded (COMMENT_ID, SHA) pair, skip the reaction check — don't guess.
+    # ENFORCE that rather than only stating it: an unset COMMENT_ID silently requests
+    # `…/comments//reactions`, and a trigger recorded against an older head lets its 👍
+    # stand in for the current one. `skip` is a THIRD value — not `false`, which would
+    # read as "asked, and it hasn't reacted".
+    # `${x:-}`, not "$x": under `set -u` a bare expansion of an UNSET variable aborts the
+    # shell before it can reach reacted=skip — i.e. the guard for "no recorded pair" would
+    # itself crash on precisely the case it exists to handle. (Verified: rc=127.)
+    if [ -z "${COMMENT_ID:-}" ] || [ -z "${TRIGGER_SHA:-}" ]; then
+      reacted=skip            # no recorded pair — no reaction evidence either way
+    elif [ "$TRIGGER_SHA" != "$HEAD" ]; then
+      reacted=skip            # 👍 belongs to an earlier trigger; a reaction has no commit
+    elif r=$(gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" --paginate \
+               --jq '.[] | select(.user.login == env.CODEX) | .content'); then
+      printf '%s\n' "$r" | grep -qx '+1' && reacted=true || reacted=false
+    else
+      echo "reaction lookup FAILED — missing evidence, not silence" >&2; exit 1
+    fi
+
+    v=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
+          --jq '.[] | select(.user.login == env.CODEX and .commit_id == env.HEAD) | .state') \
+      || { echo "review lookup FAILED — missing evidence, not silence" >&2; exit 1; }
+    ```
+
+    **Three rules matter more than this snippet**, which has been rewritten in five
+    consecutive review rounds: match the login **exactly**, scope reviews to the
+    **current HEAD**, bind `COMMENT_ID` to **this** round's trigger by recording the head
+    SHA when you post it (a reaction has no commit, and timestamps can't stand in for one
+    — a commit can become the head *after* a later trigger was posted), and treat any
+    **failed lookup as missing evidence, never as silence**. If you rewrite it, keep those
+    four; the shell around them is incidental — the `COMMENT_ID` rule was itself lost in a
+    rewrite that was only meant to simplify.
+
+    Check reactions **before** concluding it stayed silent: a 👍 means reviewed-and-clean,
+    while genuine silence stays ambiguous ("still thinking" and "found nothing" look
+    identical). If neither a finding nor a reaction has arrived, bound the wait by time,
+    proceed, and **disclose that it never reported** — don't score it as clean.
+
+  The trap: the *most* useful reviewer on this repo is the *least* observable one, so a
+  loop that waits for "all checks green" silently under-weights it.
 - **Dedup**: for rows with a stable id (column 3), keep a resolved-id set across
   rounds; for `none` / `—` rows (e.g. blocksorg, human-gates), fall back to the
   playbook's rule+file identity. See the dedup recipe in the playbook.
