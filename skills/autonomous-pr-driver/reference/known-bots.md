@@ -37,8 +37,12 @@
     # (`--slurp` aggregates, but is absent on older gh — verified missing on 2.45.0.)
     # $COMMENT_ID MUST be the trigger for THIS review round. Reactions carry no commit
     # association, so a 👍 left on an older @codex review reads as a clean review of the
-    # current HEAD. Bind it — e.g. the newest @codex trigger newer than the HEAD commit —
-    # or skip the reaction check entirely rather than trust a stale one.
+    # current HEAD. Bind the pair AT POST TIME: when you post the trigger, record the
+    # head SHA it was posted against, and reject the reaction if HEAD has moved since.
+    # Do NOT infer freshness from timestamps: a commit's author/committer date says
+    # nothing about when it became the head, so a commit cherry-picked before an older
+    # trigger but pushed after it still reads as "newer" and revives that stale 👍.
+    # With no recorded (COMMENT_ID, SHA) pair, skip the reaction check — don't guess.
     r=$(gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" --paginate \
           --jq '.[] | select(.user.login == env.CODEX) | .content') \
       || { echo "reaction lookup FAILED — missing evidence, not silence" >&2; exit 1; }
@@ -51,8 +55,9 @@
 
     **Three rules matter more than this snippet**, which has been rewritten in five
     consecutive review rounds: match the login **exactly**, scope reviews to the
-    **current HEAD**, bind `COMMENT_ID` to **this** round's trigger (a reaction has no
-    commit, so a stale one is indistinguishable from a fresh pass), and treat any
+    **current HEAD**, bind `COMMENT_ID` to **this** round's trigger by recording the head
+    SHA when you post it (a reaction has no commit, and timestamps can't stand in for one
+    — a commit can become the head *after* a later trigger was posted), and treat any
     **failed lookup as missing evidence, never as silence**. If you rewrite it, keep those
     four; the shell around them is incidental — the `COMMENT_ID` rule was itself lost in a
     rewrite that was only meant to simplify.
