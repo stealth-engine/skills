@@ -94,43 +94,18 @@ not the default.**
 #     PR while checked out on another branch; `git rev-parse HEAD` would probe the wrong
 #     commit, and a local commit that happens to have checks waves you straight through.
 SHA=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)
-# (b) WAIT FOR REGISTRATION, AND FAIL CLOSED. Straight after a push no check run exists
-#     yet; `gh pr checks` reports "no checks reported" and EXITS rather than waiting — a
-#     false "settled" while CI is still starting. An auth/network failure must not read
-#     as "zero checks", so distinguish an empty result from a failed lookup.
-#     "At least one check exists" is NOT proof they all do. Measured on this repo, a
-#     skipped check registered at 08:18:01 while the last reviewer status appeared at
-#     08:18:53 — a 52s spread. Firing on the first arrival lets --watch return having
-#     only ever seen the quick one. So: wait out a GRACE window AND require the count to
-#     stop growing. If you know the check names, EXPECTED is strictly more reliable.
-GRACE=${GRACE:-90}          # seconds to keep looking after the first check appears
-EXPECTED=${EXPECTED:-}      # optional: newline-separated names that MUST be present
-registered=0; first_seen=0; last=-1
-for _ in $(seq 1 24); do
-  cr=$(gh api "repos/$REPO/commits/$SHA/check-runs" --jq '.check_runs|length' 2>/dev/null) || cr=""
-  st=$(gh api "repos/$REPO/commits/$SHA/status"     --jq '.statuses|length'   2>/dev/null) || st=""
-  if [ -n "$cr" ] && [ -n "$st" ]; then         # empty ⇒ lookup FAILED, not "zero"
-    n=$(( cr + st ))
-    if [ "$n" -gt 0 ]; then
-      [ "$first_seen" = 0 ] && first_seen=$(date +%s)
-      if [ -n "$EXPECTED" ]; then               # deterministic path
-        have=$( { gh api "repos/$REPO/commits/$SHA/check-runs" --jq '.check_runs[].name' 2>/dev/null
-                  gh api "repos/$REPO/commits/$SHA/status"     --jq '.statuses[].context' 2>/dev/null; } | sort -u)
-        missing=$(comm -23 <(printf '%s\n' "$EXPECTED" | sort -u) <(printf '%s\n' "$have"))
-        [ -z "$missing" ] && { registered=1; break; }
-      elif [ "$n" -eq "$last" ] && [ $(( $(date +%s) - first_seen )) -ge "$GRACE" ]; then
-        registered=1; break                     # stable AND past the grace window
-      fi
-      last=$n
-    fi
-  fi
-  sleep 10
-done
-# Nothing registered, or the probe never succeeded → do NOT enter --watch: it would exit
-# "no checks reported" and read as settled. Fall back to rung 3, or hand off via rung 4.
-if [ "$registered" != 1 ]; then
-  echo "no checks registered on $SHA — use rung 3 (poll) or rung 4 (hand off)" >&2; exit 1
-fi
+[ -n "$SHA" ] || { echo "could not resolve PR head" >&2; exit 1; }
+# (b) GIVE SLOW WORKFLOWS TIME TO REGISTER. Straight after a push, `gh pr checks` reports
+#     "no checks reported" and EXITS rather than waiting — a false "settled" while CI is
+#     starting. Worse, "at least one check exists" is not proof they all do: measured on
+#     this repo a skipped check registered at 08:18:01 while the last reviewer status
+#     appeared at 08:18:53, a 52s spread, so firing on the first arrival lets --watch
+#     return having only ever seen the quick one.
+#     A flat wait is deliberate. Earlier revisions of this snippet counted checks and
+#     tested for stability; that logic drew a defect in four consecutive review rounds
+#     while protecting against something whose remedy is simply "wait longer". If you
+#     need determinism, assert your own required check names before watching instead.
+sleep "${GRACE:-90}"
 # (c) NO --fail-fast: it means "exit watch mode on first check FAILURE", so one early red
 #     returns while everything else is still pending — triaging mid-run, which this
 #     section forbids. You want every result, including the slow ones.

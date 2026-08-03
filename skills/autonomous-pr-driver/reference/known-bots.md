@@ -31,16 +31,22 @@
     # Codex looks silent — the exact false-negative this check exists to prevent.
     # Use exported vars + `env.` (the convention already used elsewhere in this file).
     export CODEX='chatgpt-codex-connector[bot]'   # EXACT login, not a substring match
-    export HEAD=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)
+    # `export VAR=$(cmd)` ALWAYS returns 0 — it masks a failed lookup, leaving HEAD empty
+    # so the commit_id test matches nothing and Codex looks silent. Assign, then check.
+    HEAD=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid) || HEAD=""
+    [ -n "$HEAD" ] || { echo "cannot resolve HEAD — treat as NO evidence, not silence" >&2; exit 1; }
+    export HEAD
 
     # Completion reaction. $COMMENT_ID must be the CURRENT trigger, not an older one.
-    gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" --paginate \
-      --jq '[.[] | select(.user.login == env.CODEX) | .content] | index("+1") != null'
+    reacted=$(gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" --paginate \
+      --jq '[.[] | select(.user.login == env.CODEX) | .content] | index("+1") != null') \
+      || { echo "reaction lookup FAILED — not evidence of silence" >&2; exit 1; }
 
     # Reviews, scoped to the CURRENT HEAD — without it an older pass reads as a report
     # on this commit and defeats the current-HEAD convergence gate.
-    gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
-      --jq '.[] | select(.user.login == env.CODEX and .commit_id == env.HEAD) | .state'
+    reviewed=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
+      --jq '.[] | select(.user.login == env.CODEX and .commit_id == env.HEAD) | .state') \
+      || { echo "review lookup FAILED — not evidence of silence" >&2; exit 1; }
     ```
 
     Check reactions **before** concluding it stayed silent: a 👍 means reviewed-and-clean,
