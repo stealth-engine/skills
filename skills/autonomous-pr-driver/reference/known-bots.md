@@ -37,16 +37,27 @@
     # (`--slurp` aggregates, but is absent on older gh — verified missing on 2.45.0.)
     # $COMMENT_ID MUST be the trigger for THIS review round. Reactions carry no commit
     # association, so a 👍 left on an older @codex review reads as a clean review of the
-    # current HEAD. Bind the pair AT POST TIME: when you post the trigger, record the
-    # head SHA it was posted against, and reject the reaction if HEAD has moved since.
+    # current HEAD. Bind the pair AT POST TIME: when you post the trigger, record its
+    # comment id and the head SHA it was posted against (COMMENT_ID / TRIGGER_SHA below),
+    # and reject the reaction if HEAD has moved since.
     # Do NOT infer freshness from timestamps: a commit's author/committer date says
     # nothing about when it became the head, so a commit cherry-picked before an older
     # trigger but pushed after it still reads as "newer" and revives that stale 👍.
     # With no recorded (COMMENT_ID, SHA) pair, skip the reaction check — don't guess.
-    r=$(gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" --paginate \
-          --jq '.[] | select(.user.login == env.CODEX) | .content') \
-      || { echo "reaction lookup FAILED — missing evidence, not silence" >&2; exit 1; }
-    printf '%s\n' "$r" | grep -qx '+1' && reacted=true || reacted=false
+    # ENFORCE that rather than only stating it: an unset COMMENT_ID silently requests
+    # `…/comments//reactions`, and a trigger recorded against an older head lets its 👍
+    # stand in for the current one. `skip` is a THIRD value — not `false`, which would
+    # read as "asked, and it hasn't reacted".
+    if [ -z "$COMMENT_ID" ] || [ -z "$TRIGGER_SHA" ]; then
+      reacted=skip            # no recorded pair — no reaction evidence either way
+    elif [ "$TRIGGER_SHA" != "$HEAD" ]; then
+      reacted=skip            # 👍 belongs to an earlier trigger; a reaction has no commit
+    elif r=$(gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" --paginate \
+               --jq '.[] | select(.user.login == env.CODEX) | .content'); then
+      printf '%s\n' "$r" | grep -qx '+1' && reacted=true || reacted=false
+    else
+      echo "reaction lookup FAILED — missing evidence, not silence" >&2; exit 1
+    fi
 
     v=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
           --jq '.[] | select(.user.login == env.CODEX and .commit_id == env.HEAD) | .state') \

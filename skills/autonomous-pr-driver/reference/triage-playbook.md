@@ -21,7 +21,9 @@ export HEAD=$(gh pr view $PR --repo $REPO --json headRefOid --jq .headRefOid)
 # on HEAD (convergence gate 1) before accepting a reviewer as having weighed in.
 { gh api repos/$REPO/pulls/$PR/reviews  --paginate --jq '.[]|select(.commit_id==env.HEAD)|.user.login'
   gh api repos/$REPO/pulls/$PR/comments --paginate --jq '.[]|select(.commit_id==env.HEAD)|.user.login'
-; } | sort -u   # the set of reviewers that have weighed in on the current HEAD
+} | sort -u   # the set of reviewers that have weighed in on the current HEAD
+              # (a leading `; }` here is a SYNTAX ERROR — the previous newline already
+              #  terminated the command, so the `;` has no command before it.)
 
 # (b) OPEN FINDINGS = every UNRESOLVED review thread — regardless of which commit it
 # was anchored to or when it was posted. THIS is the source of truth for "what's left
@@ -236,6 +238,11 @@ Fall back to the loop below only when neither is available.
 > Check `gh pr checks --help` for `--json` before relying on the loop below.
 
 ```bash
+# Bind this rung to ONE head as well — rung 2 does it at (a)/(f), and rung 3 settles on
+# exactly the same evidence. This snippet is often pasted standalone, so it can't assume
+# $SHA is already set.
+SHA=${SHA:-$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)}
+[ -n "$SHA" ] || { echo "could not resolve PR head" >&2; exit 1; }
 settled=0
 for i in $(seq 1 50); do
   # Structured output (don't grep text); FAIL CLOSED — an errored/empty result is
@@ -246,7 +253,7 @@ for i in $(seq 1 50); do
   # (a real gh/network failure) is treated as "not settled".
   # ⚠️ Requires a gh with `--json` on `pr checks` — see the warning above; on an older
   # gh this is always empty and the loop can never settle.
-  checks=$(gh pr checks $PR --repo $REPO --json name,bucket 2>/dev/null) || true
+  checks=$(gh pr checks "$PR" --repo "$REPO" --json name,bucket 2>/dev/null) || true
   if [ -n "$checks" ]; then
     # Count REAL (non-human-gate) checks: how many registered, how many still pending.
     # Replace "Approval Agent" with YOUR repo's human-gate check name(s). # <-- tune this
@@ -258,7 +265,17 @@ for i in $(seq 1 50); do
     # settling in the startup race (CI not registered yet) while still letting a
     # gate-only / no-CI repo settle (so a passed-gate-only PR isn't stuck until timeout).
     if [ "${blocking:-1}" -eq 0 ] && { [ "${real:-0}" -gt 0 ] || [ "$i" -ge 3 ]; }; then
-      echo "settled"; gh pr checks $PR --repo $REPO; settled=1; break
+      # THE HEAD CAN MOVE MID-LOOP — same rule as rung 2 (f). The checks just read belong
+      # to $SHA; a push during the wait means this evidence describes a commit you are no
+      # longer triaging. Restart rather than mix two commits.
+      NOW=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid) || NOW=""
+      if [ -z "$NOW" ] || [ "$NOW" != "$SHA" ]; then
+        echo "head moved ${SHA:0:7} -> ${NOW:-?} during the wait — restart, do not triage" >&2
+        exit 1
+      fi
+      # Guard the display call too: it exits 1 (settled-red) / 8 (pending), which under a
+      # `set -e` caller aborts on exactly the outcome you were waiting to report.
+      echo "settled"; gh pr checks "$PR" --repo "$REPO" || true; settled=1; break
     fi
   fi
   sleep 30
