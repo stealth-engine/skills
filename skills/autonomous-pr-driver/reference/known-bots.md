@@ -35,6 +35,10 @@
     # Emit FLAT LISTS and test them in the shell. Do NOT let the jq expression return the
     # boolean: under --paginate it runs once PER PAGE, so you would get "false\ntrue".
     # (`--slurp` aggregates, but is absent on older gh — verified missing on 2.45.0.)
+    # $COMMENT_ID MUST be the trigger for THIS review round. Reactions carry no commit
+    # association, so a 👍 left on an older @codex review reads as a clean review of the
+    # current HEAD. Bind it — e.g. the newest @codex trigger newer than the HEAD commit —
+    # or skip the reaction check entirely rather than trust a stale one.
     r=$(gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" --paginate \
           --jq '.[] | select(.user.login == env.CODEX) | .content') \
       || { echo "reaction lookup FAILED — missing evidence, not silence" >&2; exit 1; }
@@ -47,8 +51,11 @@
 
     **Three rules matter more than this snippet**, which has been rewritten in five
     consecutive review rounds: match the login **exactly**, scope reviews to the
-    **current HEAD**, and treat any **failed lookup as missing evidence, never as
-    silence**. If you rewrite it, keep those; the shell around them is incidental.
+    **current HEAD**, bind `COMMENT_ID` to **this** round's trigger (a reaction has no
+    commit, so a stale one is indistinguishable from a fresh pass), and treat any
+    **failed lookup as missing evidence, never as silence**. If you rewrite it, keep those
+    four; the shell around them is incidental — the `COMMENT_ID` rule was itself lost in a
+    rewrite that was only meant to simplify.
 
     Check reactions **before** concluding it stayed silent: a 👍 means reviewed-and-clean,
     while genuine silence stays ambiguous ("still thinking" and "found nothing" look
