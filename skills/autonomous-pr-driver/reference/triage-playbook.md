@@ -118,7 +118,18 @@ command -v timeout  >/dev/null 2>&1 && TO="timeout 1800"
 if [ -z "$TO" ]; then
   echo "no timeout/gtimeout — use rung 3, not an unbounded --watch" >&2; exit 1
 fi
-$TO gh pr checks "$PR" --repo "$REPO" --watch
+# (e) CAPTURE the status — do not leave this call unguarded. `gh pr checks` exits
+#     NONZERO for settled-but-red (1) and for pending (8), so under a `set -e` driver an
+#     unguarded call ABORTS THE RUN on exactly the outcome you were waiting to triage.
+#     (The rung-3 comment below already documents these codes; rung 2 has to honour them.)
+set +e; $TO gh pr checks "$PR" --repo "$REPO" --watch; rc=$?; set -e
+case "$rc" in
+  0)   : ;;   # settled, all green
+  1)   : ;;   # settled WITH FAILURES — a result to triage, not an error to abort on
+  8)   echo "still pending after watch — NOT settled (failing closed)" >&2; exit 1 ;;
+  124) echo "watch hit the deadline — NOT settled (failing closed)" >&2; exit 1 ;;
+  *)   echo "gh pr checks errored (rc=$rc) — failing closed" >&2; exit 1 ;;
+esac
 ```
 
 `--watch` refreshes every 10s server-side (`-i` to change) and returns when checks
