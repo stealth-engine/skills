@@ -183,10 +183,19 @@ if [ -z "$NOW" ] || [ "$NOW" != "$SHA" ]; then
 fi
 ```
 
-`--watch` refreshes every 10s server-side (`-i` to change) and returns when checks
-finish, so it costs one call instead of N. It works anywhere there's a shell and
-network — Cursor, Replit, Codespaces, CI, a laptop. Run it in the background and act on
-completion. (Verified: on a settled PR it returns immediately, exit 0.)
+`--watch` blocks until checks finish, re-querying every 10s (`-i` to change). It works
+anywhere there's a shell and network — Cursor, Replit, Codespaces, CI, a laptop. Run it
+in the background and act on completion. (Verified: on a settled PR it returns
+immediately, exit 0.)
+
+**What it saves is *your turns*, not API calls.** `--watch` is **client-side polling**,
+not a server-side subscription: `gh` sleeps for the interval and re-queries in a loop
+(verified in `cli/cli` `pkg/cmd/pr/checks/checks.go` — `time.Sleep(opts.Interval)` then
+`populateStatusChecks`; the manual calls `-i` a "Refresh interval ... in watch mode").
+So at the default 10s a 30-minute deadline is ~180 GraphQL queries — *more* API traffic
+than rung 3's 30s loop, not less. The win is that all of it happens inside **one** shell
+invocation, so an agent spends one turn instead of N. Budget rate limit accordingly, and
+raise `-i` on a long build.
 
 **Its last column is the check's description — read it.** This is where the
 green-but-never-reviewed case is visible:
