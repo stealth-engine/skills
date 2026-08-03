@@ -26,28 +26,29 @@
     surface, so you must ask for it explicitly:
 
     ```bash
-    # `gh api` takes --jq <expr> but does NOT forward arbitrary jq CLI flags: passing
-    # `--arg` fails with "accepts 1 arg(s), received 4", so the query never runs and
-    # Codex looks silent — the exact false-negative this check exists to prevent.
-    # Use exported vars + `env.` (the convention already used elsewhere in this file).
-    export CODEX='chatgpt-codex-connector[bot]'   # EXACT login, not a substring match
-    # `export VAR=$(cmd)` ALWAYS returns 0 — it masks a failed lookup, leaving HEAD empty
-    # so the commit_id test matches nothing and Codex looks silent. Assign, then check.
+    export CODEX='chatgpt-codex-connector[bot]'   # EXACT login — a substring match
+                                                  # accepts any login containing "codex"
     HEAD=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid) || HEAD=""
-    [ -n "$HEAD" ] || { echo "cannot resolve HEAD — treat as NO evidence, not silence" >&2; exit 1; }
+    [ -n "$HEAD" ] || { echo "no HEAD — that is missing evidence, not silence" >&2; exit 1; }
     export HEAD
 
-    # Completion reaction. $COMMENT_ID must be the CURRENT trigger, not an older one.
-    reacted=$(gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" --paginate \
-      --jq '[.[] | select(.user.login == env.CODEX) | .content] | index("+1") != null') \
-      || { echo "reaction lookup FAILED — not evidence of silence" >&2; exit 1; }
+    # Emit FLAT LISTS and test them in the shell. Do NOT let the jq expression return the
+    # boolean: under --paginate it runs once PER PAGE, so you would get "false\ntrue".
+    # (`--slurp` aggregates, but is absent on older gh — verified missing on 2.45.0.)
+    r=$(gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" --paginate \
+          --jq '.[] | select(.user.login == env.CODEX) | .content') \
+      || { echo "reaction lookup FAILED — missing evidence, not silence" >&2; exit 1; }
+    printf '%s\n' "$r" | grep -qx '+1' && reacted=true || reacted=false
 
-    # Reviews, scoped to the CURRENT HEAD — without it an older pass reads as a report
-    # on this commit and defeats the current-HEAD convergence gate.
-    reviewed=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
-      --jq '.[] | select(.user.login == env.CODEX and .commit_id == env.HEAD) | .state') \
-      || { echo "review lookup FAILED — not evidence of silence" >&2; exit 1; }
+    v=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
+          --jq '.[] | select(.user.login == env.CODEX and .commit_id == env.HEAD) | .state') \
+      || { echo "review lookup FAILED — missing evidence, not silence" >&2; exit 1; }
     ```
+
+    **Three rules matter more than this snippet**, which has been rewritten in five
+    consecutive review rounds: match the login **exactly**, scope reviews to the
+    **current HEAD**, and treat any **failed lookup as missing evidence, never as
+    silence**. If you rewrite it, keep those; the shell around them is incidental.
 
     Check reactions **before** concluding it stayed silent: a 👍 means reviewed-and-clean,
     while genuine silence stays ambiguous ("still thinking" and "found nothing" look

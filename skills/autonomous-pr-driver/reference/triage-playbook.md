@@ -170,9 +170,11 @@ Fall back to the loop below only when neither is available.
 > releases:
 >
 > ```bash
-> gh api "repos/$REPO/commits/$SHA/check-runs" \
+> # --paginate on BOTH: each endpoint defaults to per_page=30, so a matrix build's
+> # later jobs (or a pending one) are simply absent from an unpaginated first page.
+> gh api "repos/$REPO/commits/$SHA/check-runs" --paginate \
 >   --jq '.check_runs[] | "\(.name)\t\(.status)\t\(.conclusion // "-")"'
-> gh api "repos/$REPO/commits/$SHA/status" \
+> gh api "repos/$REPO/commits/$SHA/status" --paginate \
 >   --jq '.statuses[]  | "\(.context)\t\(.state)\t\(.description)"'   # description ⇒ rate-limit trap
 > ```
 >
