@@ -239,9 +239,14 @@ Fall back to the loop below only when neither is available.
 
 ```bash
 # Bind this rung to ONE head as well — rung 2 does it at (a)/(f), and rung 3 settles on
-# exactly the same evidence. This snippet is often pasted standalone, so it can't assume
-# $SHA is already set.
-SHA=${SHA:-$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)}
+# exactly the same evidence.
+# RESOLVE IT UNCONDITIONALLY, every round. A `${SHA:-…}` default looks harmless but is a
+# one-way trap: the driver re-runs this loop in the SAME shell after each fix push, so
+# round 2 would keep round 1's SHA, poll the NEW head, and then fail the (f)-style
+# comparison against the OLD one — reporting "head moved" on every subsequent round,
+# forever, until the caller thinks to unset SHA. Rungs 2 and 3 are alternatives, not a
+# sequence, so there is no earlier value worth inheriting.
+SHA=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)
 [ -n "$SHA" ] || { echo "could not resolve PR head" >&2; exit 1; }
 settled=0
 for i in $(seq 1 50); do
