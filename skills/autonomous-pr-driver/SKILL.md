@@ -352,8 +352,11 @@ mode this prevents — it burns budget and, past the real issues, improves nothi
 - [ ] All **required** checks green (ignore neutral/skipped + human-gated approvers).
 - [ ] **No green check is actually a non-review** — read each check's *description*, not
       just its state (CodeRabbit: `success` + `"Review rate limited"` = never looked).
-- [ ] **Comment-only reviewers accounted for** — ones that post no check (Codex) give no
-      completion signal, so silence isn't a clean review; bound the wait and disclose it.
+- [ ] **Comment-only reviewers accounted for** — ones that post no status check (Codex)
+      never appear in the rollup. Before calling it silence, check their non-check signal
+      (Codex's observed 👍 reaction — exact login, current HEAD; recipe in
+      `known-bots.md`). Only with neither a finding nor a reaction is it silence: bound
+      the wait and **disclose it** rather than scoring it clean.
 - [ ] **Every expected automated reviewer has weighed in on the current HEAD SHA** — cadence-aware: **per-push** reviewers re-review automatically (their check completed on HEAD and/or a review/inline/issue comment on HEAD); **on-demand** reviewers must be **explicitly re-triggered** (`@bot review`) if you need their pass — **on the final/converged HEAD, not on intermediate fix rounds** (each request is a metered review; a fix to a final-pass finding makes a new final HEAD that gets its own pass, so it's once per *final* HEAD, not one per PR) — don't silently exclude them, and don't hand off until a needed on-demand reviewer has actually re-reported on HEAD (or you've decided its sign-off isn't required and said so in the summary). Don't block on one-shot or human reviewers who won't re-post each push (their findings are covered by the next item).
 - [ ] **Every open finding triaged** — both unresolved review threads *and* top-level issue-comment findings, enumerated in full (not time/`commit_id`-filtered), each reaching a **terminal verdict** (fixed / rejected / verified-stale-in-file / kept-with-reason). A **`Deferred`** finding blocks hand-off unless it's tracked in a follow-up *and* the human has accepted the deferral.
 - [ ] Rejections each have a one-line reason comment.

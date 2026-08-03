@@ -1,6 +1,6 @@
 # Known review bots — behaviour snapshot
 
-> **Snapshot as of 2026-07.** These are *known examples*, not an exhaustive list.
+> **Snapshot as of 2026-08** (rows verified 2026-07 unless a note says 2026-08). These are *known examples*, not an exhaustive list.
 > Treat any reviewer not listed here with the general method in
 > [`triage-playbook.md`](./triage-playbook.md), and **add it here once you've learned
 > its behaviour**. Bots change — re-verify if reality diverges from this table.
@@ -26,14 +26,20 @@
     surface, so you must ask for it explicitly:
 
     ```bash
-    # Filter by the REACTING USER — the endpoint returns `user`, and an unfiltered
-    # query counts ANY participant's 👍. A human liking the trigger comment would
-    # otherwise read as "Codex reviewed and found nothing" when it never ran.
-    # $COMMENT_ID must be the CURRENT review trigger, not an older one.
-    gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" \
-      --jq '[.[] | select(.user.login | test("codex"; "i")) | .content] | index("+1") != null'
-    gh api "repos/$REPO/pulls/$PR/reviews" \
-      --jq '.[] | select(.user.login | test("codex"; "i")) | .state'
+    CODEX='chatgpt-codex-connector[bot]'    # EXACT login (quoted: [] is glob syntax) — see the two traps below
+    HEAD=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)
+
+    # Trap 1: match the login EXACTLY. A substring/`test("codex")` match accepts a 👍
+    # from any human or app whose login merely contains "codex".
+    # Trap 2: $COMMENT_ID must be the CURRENT review trigger, not an older one.
+    gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" --paginate \
+      --jq --arg c "$CODEX" '[.[] | select(.user.login == $c) | .content] | index("+1") != null'
+
+    # Reviews: scope to the CURRENT HEAD. Without the commit_id filter an older pass
+    # reads as a report on this commit, defeating the current-HEAD convergence gate.
+    gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
+      --jq --arg c "$CODEX" --arg h "$HEAD" \
+      '.[] | select(.user.login == $c and .commit_id == $h) | .state'
     ```
 
     Check reactions **before** concluding it stayed silent: a 👍 means reviewed-and-clean,

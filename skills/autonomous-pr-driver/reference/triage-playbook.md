@@ -90,27 +90,38 @@ not the default.**
 ```bash
 # Rung 2 — portable, no harness support needed. Blocks until checks finish.
 #
-# (a) WAIT FOR REGISTRATION FIRST. Straight after a push no check run exists yet, and
-#     `gh pr checks` reports "no checks reported" and exits instead of waiting — a false
-#     "settled" while CI is still starting. Probe via the REST API, which every gh
-#     version has (see the --json warning below).
-SHA=$(git rev-parse HEAD)
+# (a) RESOLVE THE PR HEAD — not the local checkout. The driver frequently attaches to a
+#     PR while checked out on another branch; `git rev-parse HEAD` would probe the wrong
+#     commit, and a local commit that happens to have checks waves you straight through.
+SHA=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)
+# (b) WAIT FOR REGISTRATION, AND FAIL CLOSED. Straight after a push no check run exists
+#     yet; `gh pr checks` reports "no checks reported" and EXITS rather than waiting — a
+#     false "settled" while CI is still starting. An auth/network failure must not read
+#     as "zero checks", so distinguish an empty result from a failed lookup.
+registered=0
 for _ in $(seq 1 12); do
-  n=$(( $(gh api "repos/$REPO/commits/$SHA/check-runs" --jq '.check_runs|length' 2>/dev/null || echo 0) \
-      + $(gh api "repos/$REPO/commits/$SHA/status"     --jq '.statuses|length'   2>/dev/null || echo 0) ))
-  [ "$n" -gt 0 ] && break
-  sleep 10
+  cr=$(gh api "repos/$REPO/commits/$SHA/check-runs" --jq '.check_runs|length' 2>/dev/null) || cr=""
+  st=$(gh api "repos/$REPO/commits/$SHA/status"     --jq '.statuses|length'   2>/dev/null) || st=""
+  if [ -n "$cr" ] && [ -n "$st" ] && [ $(( cr + st )) -gt 0 ]; then registered=1; break; fi
+  sleep 10          # empty ⇒ lookup failed (not "zero") ⇒ retry rather than conclude
 done
-# (b) NO --fail-fast: it means "exit watch mode on first check FAILURE", so one early red
+# Nothing registered, or the probe never succeeded → do NOT enter --watch: it would exit
+# "no checks reported" and read as settled. Fall back to rung 3, or hand off via rung 4.
+if [ "$registered" != 1 ]; then
+  echo "no checks registered on $SHA — use rung 3 (poll) or rung 4 (hand off)" >&2; exit 1
+fi
+# (c) NO --fail-fast: it means "exit watch mode on first check FAILURE", so one early red
 #     returns while everything else is still pending — triaging mid-run, which this
 #     section forbids. You want every result, including the slow ones.
-# (c) `timeout` is GNU coreutils and is ABSENT on stock macOS/BSD — hard-coding it makes
-#     this "portable" rung die with `command not found`. Detect it; degrade, don't fail.
+# (d) A DEADLINE IS MANDATORY, and `timeout` is GNU coreutils — ABSENT on stock
+#     macOS/BSD. Do NOT silently degrade to an unbounded --watch: with a pending human
+#     gate (below) that hangs forever, which is worse than not using this rung at all.
 TO=""
 command -v timeout  >/dev/null 2>&1 && TO="timeout 1800"
 [ -z "$TO" ] && command -v gtimeout >/dev/null 2>&1 && TO="gtimeout 1800"
-# No deadline available → still run, but you MUST have ruled out the human-gate trap
-# below, since that is what an unbounded --watch hangs on.
+if [ -z "$TO" ]; then
+  echo "no timeout/gtimeout — use rung 3, not an unbounded --watch" >&2; exit 1
+fi
 $TO gh pr checks "$PR" --repo "$REPO" --watch
 ```
 
@@ -190,14 +201,14 @@ for i in $(seq 1 50); do
     blocking=$(printf '%s' "$checks" |
       jq '[.[] | select(.bucket=="pending" and (.name|test("Approval Agent")|not))] | length')
     # Settle when no REAL (non-gate) check is pending, AND either a real check has
-    # registered OR a grace period (~iters*20s) has elapsed. The grace window avoids
+    # registered OR a grace period (~iters*30s) has elapsed. The grace window avoids
     # settling in the startup race (CI not registered yet) while still letting a
     # gate-only / no-CI repo settle (so a passed-gate-only PR isn't stuck until timeout).
     if [ "${blocking:-1}" -eq 0 ] && { [ "${real:-0}" -gt 0 ] || [ "$i" -ge 3 ]; }; then
       echo "settled"; gh pr checks $PR --repo $REPO; settled=1; break
     fi
   fi
-  sleep 20
+  sleep 30
 done
 # Don't treat "ran out of budget" as success — surface the timeout so the loop can
 # decide (a check may be stuck/queued; investigate rather than triage blindly).
