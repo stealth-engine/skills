@@ -26,8 +26,14 @@
     surface, so you must ask for it explicitly:
 
     ```bash
-    gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" --jq '.[]|.content'
-    gh api "repos/$REPO/pulls/$PR/reviews" --jq '.[]|select(.user.login|test("codex"))|.state'
+    # Filter by the REACTING USER — the endpoint returns `user`, and an unfiltered
+    # query counts ANY participant's 👍. A human liking the trigger comment would
+    # otherwise read as "Codex reviewed and found nothing" when it never ran.
+    # $COMMENT_ID must be the CURRENT review trigger, not an older one.
+    gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" \
+      --jq '[.[] | select(.user.login | test("codex"; "i")) | .content] | index("+1") != null'
+    gh api "repos/$REPO/pulls/$PR/reviews" \
+      --jq '.[] | select(.user.login | test("codex"; "i")) | .state'
     ```
 
     Check reactions **before** concluding it stayed silent: a 👍 means reviewed-and-clean,

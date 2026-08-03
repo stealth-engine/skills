@@ -137,9 +137,11 @@ Verified: `gh pr checks` has **no per-check exclusion flag at all**. The complet
 set is `--required`, `--fail-fast`, `-i`, `--watch`, `--web`. So:
 
 - **No human gate on this repo?** Rung 2 as written. This is the common case.
-- **Human gate, and it is _not_ a required check?** Add `--required` — but know the cost:
-  it also hides any reviewer check that isn't required (CodeRabbit often isn't), so you
-  can return before that reviewer has finished.
+- **Human gate that isn't required, AND every check you need to settle _is_ required?**
+  Only then is `--required` safe. It hides *all* non-required checks, not just the gate —
+  so if any CI job or reviewer you're waiting on is also non-required (CodeRabbit often
+  isn't), `--watch` returns while it's still pending, which is the mid-run triage this
+  section forbids. Verify that precondition per repo; if you can't, use rung 3.
 - **Human gate that _is_ required?** Rung 2 can't express this. **Skip to rung 3** — the
   loop below excludes gates by name, which is the only way to do it.
 
