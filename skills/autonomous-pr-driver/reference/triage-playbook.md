@@ -137,9 +137,19 @@ case "$rc" in
        # Verified: a nonexistent PR, an unknown repo and a bad flag ALL exit 1, so
        # accepting 1 blindly treats an API error (or "no checks reported") as a finished
        # red build and walks straight into triage. Confirm against the rollup first.
-       all=$( { gh api "repos/$REPO/commits/$SHA/check-runs" --paginate --jq '.check_runs[]|.status' 2>/dev/null
-                gh api "repos/$REPO/commits/$SHA/status"     --paginate --jq '.statuses[]|.state'  2>/dev/null; } )
-       if [ -z "$all" ]; then
+       # Capture each half INDEPENDENTLY. A brace group takes the exit status of its LAST
+       # command, so if check-runs 403s or times out while statuses succeeds, `all` is
+       # non-empty from statuses alone and every pending check-run is invisible to the
+       # test below — half a rollup reading as a whole one.
+       if cr=$(gh api "repos/$REPO/commits/$SHA/check-runs" --paginate \
+                 --jq '.check_runs[]|.status' 2>/dev/null); then cr_ok=1; else cr_ok=0; fi
+       if st=$(gh api "repos/$REPO/commits/$SHA/status" --paginate \
+                 --jq '.statuses[]|.state' 2>/dev/null); then st_ok=1; else st_ok=0; fi
+       if [ "$cr_ok" != 1 ] || [ "$st_ok" != 1 ]; then
+         echo "rc=1 but a rollup query failed — cannot confirm settlement; failing closed" >&2; exit 1
+       fi
+       all=$(printf '%s\n%s\n' "$cr" "$st")
+       if [ -z "$(printf '%s' "$all" | tr -d '[:space:]')" ]; then
          echo "rc=1 and the rollup is empty/unreadable — command error, not a red build; failing closed" >&2; exit 1
        fi
        if printf '%s\n' "$all" | grep -qE '^(queued|in_progress|pending)$'; then
