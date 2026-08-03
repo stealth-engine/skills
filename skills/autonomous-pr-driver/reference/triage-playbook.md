@@ -141,10 +141,16 @@ case "$rc" in
        # command, so if check-runs 403s or times out while statuses succeeds, `all` is
        # non-empty from statuses alone and every pending check-run is invisible to the
        # test below — half a rollup reading as a whole one.
+       # ALLOWLIST the terminal state; do not enumerate the pending ones. A check run's
+       # status can be queued/in_progress/waiting/requested/pending — enumerating that
+       # set means every value GitHub adds later silently reads as "settled". Only
+       # `completed` is done; a commit status is done unless it is `pending`.
        if cr=$(gh api "repos/$REPO/commits/$SHA/check-runs" --paginate \
-                 --jq '.check_runs[]|.status' 2>/dev/null); then cr_ok=1; else cr_ok=0; fi
+                 --jq '.check_runs[] | if .status == "completed" then "done" else "PENDING" end' \
+                 2>/dev/null); then cr_ok=1; else cr_ok=0; fi
        if st=$(gh api "repos/$REPO/commits/$SHA/status" --paginate \
-                 --jq '.statuses[]|.state' 2>/dev/null); then st_ok=1; else st_ok=0; fi
+                 --jq '.statuses[] | if .state == "pending" then "PENDING" else "done" end' \
+                 2>/dev/null); then st_ok=1; else st_ok=0; fi
        if [ "$cr_ok" != 1 ] || [ "$st_ok" != 1 ]; then
          echo "rc=1 but a rollup query failed — cannot confirm settlement; failing closed" >&2; exit 1
        fi
@@ -152,7 +158,7 @@ case "$rc" in
        if [ -z "$(printf '%s' "$all" | tr -d '[:space:]')" ]; then
          echo "rc=1 and the rollup is empty/unreadable — command error, not a red build; failing closed" >&2; exit 1
        fi
-       if printf '%s\n' "$all" | grep -qE '^(queued|in_progress|pending)$'; then
+       if printf '%s\n' "$all" | grep -q '^PENDING$'; then
          echo "rc=1 but checks are still pending — not settled; failing closed" >&2; exit 1
        fi
        ;;   # confirmed: checks exist, all finished, some red → triage
