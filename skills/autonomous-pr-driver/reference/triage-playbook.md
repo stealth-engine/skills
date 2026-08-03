@@ -79,10 +79,40 @@ gh pr view  $PR --repo $REPO --json mergeable,mergeStateStatus,state,reviewDecis
 > Big comment bodies can exceed tool output limits — pipe through `jq` slices
 > (`.body[0:400]`) or strip HTML `<details>` blocks before reading.
 
-## Poll until checks settle
+## Wait until checks settle
 
 Don't triage mid-run. Treat as settled when nothing is pending **except** a
-human-gated approver. Run this in the background and act when it returns:
+human-gated approver.
+
+**Try the blocking waits first — this poll loop is rung 3 of the ladder in `SKILL.md`,
+not the default.**
+
+```bash
+# Rung 2 — portable, no harness support needed. Blocks until checks finish.
+gh pr checks "$PR" --repo "$REPO" --watch --fail-fast
+```
+
+`--watch` refreshes every 10s server-side (`-i` to change) and returns when checks
+finish, so it costs one call instead of N. It works anywhere there's a shell and
+network — Cursor, Replit, Codespaces, CI, a laptop. Run it in the background and act on
+completion. (Verified: on a settled PR it returns immediately, exit 0.)
+
+**Its last column is the check's description — read it.** This is where the
+green-but-never-reviewed case is visible:
+
+```text
+CodeQL       pass  2s   https://…
+CodeRabbit   pass  0         Review rate limited     ← green, and NOT reviewed
+```
+
+Limitation: it watches **only checks**. It won't wake you for a new review comment, and
+a comment-only reviewer (Codex posts no check at all) is invisible to it. Pair it with a
+comment sweep after it returns.
+
+If the harness has an event watcher (rung 1) that streams new comments *and* check
+results, prefer that — it covers both signals at once.
+
+Fall back to the loop below only when neither is available:
 
 ```bash
 settled=0

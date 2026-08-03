@@ -1,10 +1,10 @@
 ---
 name: autonomous-pr-driver
-description: "Autonomously drive a pull request to merge-ready — opening or attaching to it, then resolving automated code review (triage findings, fix the valid, reject the invalid, push, loop) and pinging a human to merge. Knows when to STOP: at diminishing returns (niche/trivial/contradictory findings, severity trending down, or review budget accruing) it declares the PR good-to-merge on substance and pauses rather than auto-looping to chase a bot to zero comments — resuming only if the user insists or a genuinely important finding appears. Use when asked to 'drive / ship / land this PR', 'get the PR green', 'resolve the PR review comments', 'address the CodeRabbit / Cursor / Bugbot / Codex findings', 'fix the code review and push', 'stop over-fixing / merge it', or to loop on PR reviews until checks pass. Covers stacked PRs, where gh pr merge fails and gh stack merge lands the stack atomically."
+description: "Autonomously drive a pull request to merge-ready — opening or attaching to it, then resolving automated code review (triage findings, fix the valid, reject the invalid, push, loop) and pinging a human to merge. Knows when to STOP: at diminishing returns (niche/trivial/contradictory findings, severity trending down, or review budget accruing) it declares the PR good-to-merge on substance and pauses rather than auto-looping to chase a bot to zero comments — resuming only if the user insists or a genuinely important finding appears. Use when asked to 'drive / ship / land this PR', 'get the PR green', 'resolve the PR review comments', 'address the CodeRabbit / Cursor / Bugbot / Codex findings', 'fix the code review and push', 'stop over-fixing / merge it', or to loop on PR reviews until checks pass. Covers stacked PRs, where gh pr merge fails and gh stack merge lands the stack atomically, and portable waiting across Cursor / Replit / sandboxes: prefer a host event watcher, else gh pr checks --watch, else poll, else hand off. Warns that a green check can mean the reviewer never looked (CodeRabbit 'Review rate limited') and that comment-only reviewers like Codex post no check at all."
 metadata:
   author: stealth-engine
   co-author: wiiiimm
-  version: "1.7.0"
+  version: "1.8.0"
 ---
 
 # Autonomous PR driver
@@ -32,9 +32,32 @@ cadence + @-tag behaviour snapshot).
    `AGENTS.md`/`CONTRIBUTING`), commit, push, open a PR with a **Conventional
    Commit** title (it becomes the squash commit). If a PR already exists for the
    branch, **attach to it** and continue from step 2 (watch checks before triaging).
-2. **Watch checks.** Poll until checks **settle** — don't triage mid-run.
+2. **Watch checks.** Wait until checks **settle** — don't triage mid-run.
    "Settled" = no pending checks *except* human-gated approvers (e.g. a "PR
-   approver" agent that waits for a human). See the playbook's poll recipe.
+   approver" agent that waits for a human).
+
+   **Use the best wait your environment has — don't hand-roll a sleep loop.**
+   Descend this ladder until one applies:
+
+   | Rung | Mechanism | Available where |
+   | --- | --- | --- |
+   | 1 | **Host event watcher** — a background watcher that notifies you on each new comment / check result | Harnesses that can wake an agent mid-turn (e.g. Claude Code's `Monitor`) |
+   | 2 | **`gh pr checks --watch`** — blocks until checks finish (`--fail-fast`, `-i <secs>`) | **Anywhere with a shell + network.** No inbound, no harness support |
+   | 3 | Poll on a **≥30s** interval | Last resort — burns turns |
+   | 4 | **Don't wait at all** — post the status table and hand off | Sandboxes/CI with a wall-clock cap you'd hit |
+
+   Rung 2 is the portable default and gets you most of rung 1 for nothing. Rung 4 is a
+   **real path, not a failure**: if the environment will cut you off mid-wait, a clean
+   hand-off beats a truncated loop. Webhooks aren't on this ladder on purpose — they
+   only pay off in a harness that can wake the agent, and any harness that can do that
+   already has rung 1.
+
+   ⚠️ **A green check can mean "I didn't look."** Read the check's *description*, not
+   just its colour. CodeRabbit reports `state=success` with
+   `description="Review rate limited"` — visually identical to a real pass, and it means
+   that commit was **never reviewed**. Treat that as "reviewer has not reported on HEAD"
+   and either re-trigger it or say so explicitly at hand-off. (Observed on this repo:
+   `"Review completed"` vs `"Review rate limited"`, both green.)
 3. **Resolve reviews.**
    - Enumerate **every open finding** — unresolved review threads **and** top-level
      issue-comment findings.
@@ -59,6 +82,15 @@ cadence + @-tag behaviour snapshot).
    - **No open finding (thread or issue comment) remains valid on HEAD.** Stale
      re-posts and rejected/"wontfix" items don't block; **don't chase
      non-deterministic bots to zero comments** — they re-post regardless.
+
+   ⚠️ **Some reviewers post no check at all** — they only ever appear as review
+   comments. For those, *silence is not evidence of a clean review*: there is no
+   pending indicator, so "still working" and "reviewed, found nothing" look identical.
+   You cannot wait on them deterministically. Bound the wait by time, then proceed and
+   **say in the hand-off that they never reported** — don't quietly count them as clean.
+   (Verified on this repo: Codex has no status check on any PR; the rollup shows only
+   CodeQL/Analyze/CodeRabbit. It was also the **highest-signal reviewer** across a
+   12-round PR — so "wait for the checks to go green" systematically under-weights it.)
 
    There is a **second, earlier exit**: converged *on substance* while findings have
    hit **diminishing returns** (see "Stop at diminishing returns"). When the loop is
@@ -306,6 +338,10 @@ mode this prevents — it burns budget and, past the real issues, improves nothi
 ## Convergence checklist
 
 - [ ] All **required** checks green (ignore neutral/skipped + human-gated approvers).
+- [ ] **No green check is actually a non-review** — read each check's *description*, not
+      just its state (CodeRabbit: `success` + `"Review rate limited"` = never looked).
+- [ ] **Comment-only reviewers accounted for** — ones that post no check (Codex) give no
+      completion signal, so silence isn't a clean review; bound the wait and disclose it.
 - [ ] **Every expected automated reviewer has weighed in on the current HEAD SHA** — cadence-aware: **per-push** reviewers re-review automatically (their check completed on HEAD and/or a review/inline/issue comment on HEAD); **on-demand** reviewers must be **explicitly re-triggered** (`@bot review`) if you need their pass — **on the final/converged HEAD, not on intermediate fix rounds** (each request is a metered review; a fix to a final-pass finding makes a new final HEAD that gets its own pass, so it's once per *final* HEAD, not one per PR) — don't silently exclude them, and don't hand off until a needed on-demand reviewer has actually re-reported on HEAD (or you've decided its sign-off isn't required and said so in the summary). Don't block on one-shot or human reviewers who won't re-post each push (their findings are covered by the next item).
 - [ ] **Every open finding triaged** — both unresolved review threads *and* top-level issue-comment findings, enumerated in full (not time/`commit_id`-filtered), each reaching a **terminal verdict** (fixed / rejected / verified-stale-in-file / kept-with-reason). A **`Deferred`** finding blocks hand-off unless it's tracked in a follow-up *and* the human has accepted the deferral.
 - [ ] Rejections each have a one-line reason comment.
