@@ -111,6 +111,50 @@ for d in skills/*/; do n=$(basename "$d"); \
 
 (Consumers of this repo install instead with `npx skills add stealth-engine/skills`.)
 
+## Environment facts — verified on this machine, not from docs
+
+`gh` here is **2.45.0**, which is older than most documentation assumes. Each of these
+cost a real defect in a shipped skill before it was caught:
+
+| Assumption | Reality on this `gh` | How it fails |
+| --- | --- | --- |
+| `gh pr checks --json …` | **`unknown flag: --json`** | A loop that captures empty output and fails closed **spins forever and times out**, looking like slow CI rather than a broken command |
+| `gh api --jq --arg k v '…'` | **`accepts 1 arg(s), received 4`** — `gh api` takes `--jq <expr>` but forwards **no** jq CLI flags | The query never runs; its subject looks *silent* rather than unqueried. Use exported vars + `env.NAME` |
+| `gh api --slurp` | **absent** | Suggested by reviewers as a paginate fix; adopting it reintroduces the same class of bug |
+| `gh skill install …` | **`unknown command`** (newer than the extension) | `gh extension install` still works |
+| exit code `1` = "checks failed" | **overloaded** — a nonexistent PR, an unknown repo and a bad flag *all* exit 1 | An API error reads as "CI finished red" and you triage a build that never ran |
+| `timeout` is available | **GNU coreutils** — absent on stock macOS/BSD | A "portable" recipe dies with `command not found` |
+
+**The rule this earned: run the exact invocation, in the form it will ship.** Reading a
+flag in a manual is not verification — three separate defects here passed a docs check
+and failed on first execution. The API is the source of truth; an exit code is a hint.
+
+## Review bots in this repo
+
+Both PR-driving skills depend on these; re-verify if behaviour diverges.
+
+- **CodeRabbit** (`coderabbitai[bot]`) — check-backed, but its green tick is **not proof
+  of review**: `state=success` with `description="Review rate limited"` means it never
+  looked (vs `"Review completed"`). Read the description, never the colour. It is also
+  **starved by a fast push cadence** — on one 16-commit PR it was throttled on 7 of the
+  last 9 heads, because each push consumed the slot the previous throttle had released.
+  Batch a whole round into one push.
+- **Codex** (`chatgpt-codex-connector[bot]`) — posts **no status check at all**, so it
+  never appears in the rollup and silence from it is ambiguous. It is nonetheless the
+  **highest-signal reviewer** observed here. Measured latency: **2–4 minutes after every
+  push, 17/17** — so a short quiet period after checks settle catches it reliably; long
+  waits are unnecessary and "it hasn't reported" usually means *you aren't looking at
+  comments*.
+- **Findings arrive as comments, not check failures.** On a 16-commit PR: **44
+  comment-delivered findings, 0 failing checks.** Any wait that only watches checks —
+  including `gh pr checks --watch` — reports "all settled" while every real finding sits
+  unread. Always pair a check wait with a comment sweep.
+
+**Driving a PR here:** `/autofix-pr` is enabled on this account and can drive a PR from a
+cloud session, pushing commits itself. **Only one agent should push to a branch at a
+time** — if a cloud session owns the branch, stay read-only and branch off `main` for
+unrelated work.
+
 ## Branching & pull requests
 
 This repo uses a **feature-branch + PR** workflow. Do **not** commit directly to
@@ -129,3 +173,48 @@ This repo uses a **feature-branch + PR** workflow. Do **not** commit directly to
 - One concern per skill. Split rather than overload.
 - Bump `metadata.version` (semver) on a meaningful change.
 - Conventional Commits for messages (`feat(skill): …`, `docs: …`, `fix: …`).
+
+## Writing skills that survive review
+
+These are not style preferences. Each is a failure pattern that produced multiple real
+defects here, and each is cheap to avoid once named.
+
+- **Shipping shell in a judgment skill creates an unbounded review surface.** One
+  30-line recipe drew a defect in *nearly every review round* of a 16-commit PR; the two
+  blocks reduced to *stated requirements* produced none afterwards. Prefer stating the
+  rule ("check each lookup independently") over shipping a reference implementation of
+  it. Prose cannot rot; shell does. When an addition keeps attracting findings,
+  **simplify or drop it** rather than patch it a third time.
+- **Any construct that folds several results into one exit status will hide the one that
+  failed.** Same defect, three costumes, three separate rounds: `$(cmd) || echo 0` turned
+  an API error into "zero results"; `export VAR=$(cmd)` always returns 0; `{ a; b; }` and
+  pipelines take the *last* command's status. Capture and test each lookup on its own.
+- **A failed lookup is missing evidence, never a negative result.** Fail closed. Most
+  fail-opens here were an error path quietly reading as "nothing found".
+- **Prefer an allowlist of the terminal state over a denylist of pending ones.**
+  Enumerating `queued|in_progress|pending` went stale the moment `waiting`/`requested`
+  appeared. `!= "completed"` cannot.
+- **Silence is not success.** A guard, watcher, or query that cannot emit on its failure
+  path is indistinguishable from a quiet system. Two watchers in one session were each
+  half-dead for many rounds without ever announcing it. Before trusting one, make it
+  prove it fires on a known event.
+- **When adding to a file, diff against what the file already claims.** Three defects
+  came from writing something that contradicted correct guidance already present 70 lines
+  away. Simplification is the same hazard in reverse: **diff what you delete** — one
+  "cleanup" silently removed a safeguard and reopened a closed fail-open.
+- **Verify a reviewer's suggested *mechanism*, not just its concern.** Twice a proposed
+  fix (`--slurp`) was itself unavailable on this toolchain. Take the finding; check the
+  remedy.
+
+## Driving review (see `skills/autonomous-pr-driver/`)
+
+- **Stop pushing ≠ stop watching.** Diminishing returns should end the *fix cadence*, not
+  the session's attention. Ending both is what makes a driver look like it gave up.
+- **Prefer a stateless re-sweep over a clever incremental watcher.** Every watcher bug
+  here lived in incremental state — seen-sets, author filters, per-page `jq`. Re-running
+  the full enumeration from scratch has nothing to rot.
+- **A PR subscription without an author filter feeds itself.** Independently observed in
+  two separate implementations: the loop's own replies wake it. Filter your own identity.
+- **Pushed events can be stale.** A webhook describes the moment it was emitted, so an
+  event may name a commit that is no longer HEAD. Re-read HEAD before acting; polling
+  always reads current state, push does not.
