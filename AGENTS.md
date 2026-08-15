@@ -111,17 +111,20 @@ for d in skills/*/; do n=$(basename "$d"); \
 
 (Consumers of this repo install instead with `npx skills add stealth-factory/skills`.)
 
-## Environment facts — verified on this machine, not from docs
+## Environment facts — verify the toolchain; don't assume the docs
 
-`gh` here is **2.45.0**, which is older than most documentation assumes. Each of these
-cost a real defect in a shipped skill before it was caught:
+These gaps were verified on `gh` **2.45.0** and each cost a real defect in a shipped
+skill. **They are compatibility notes, not a claim about the current machine.**
+`gh` versions vary across checkouts (2.45.0, 2.91.0, and 2.96.0 have all shown up).
+Detect the installed version (`gh --version`) and **run the exact invocation in the
+form it will ship** — a flag in a manual is not verification.
 
-| Assumption | Reality on this `gh` | How it fails |
+| Assumption | Reality on `gh` 2.45.0 | How it fails |
 | --- | --- | --- |
-| `gh pr checks --json …` | **`unknown flag: --json`** | A loop that captures empty output and fails closed **spins forever and times out**, looking like slow CI rather than a broken command |
-| `gh api --jq --arg k v '…'` | **`accepts 1 arg(s), received 4`** — `gh api` takes `--jq <expr>` but forwards **no** jq CLI flags | The query never runs; its subject looks *silent* rather than unqueried. Use exported vars + `env.NAME` |
-| `gh api --slurp` | **absent** | Suggested by reviewers as a paginate fix; adopting it reintroduces the same class of bug |
-| `gh skill install …` | **`unknown command`** (newer than the extension) | `gh extension install` still works |
+| `gh pr checks --json …` | **`unknown flag: --json`** (present on 2.91+) | A loop that captures empty output and fails closed **spins forever and times out**, looking like slow CI rather than a broken command |
+| `gh api --jq --arg k v '…'` | **`accepts 1 arg(s), received 4`** — `gh api` takes `--jq <expr>` but forwards **no** jq CLI flags (still true on 2.91) | The query never runs; its subject looks *silent* rather than unqueried. Use exported vars + `env.NAME` |
+| `gh api --slurp` | **absent** on 2.45.0 (present on 2.91+) | Suggested by reviewers as a paginate fix; adopting it on an older `gh` reintroduces the same class of bug |
+| `gh skill install …` | **`unknown command`** on 2.45.0 (present on 2.91+) | `gh extension install` still works |
 | exit code `1` = "checks failed" | **overloaded** — a nonexistent PR, an unknown repo and a bad flag *all* exit 1 | An API error reads as "CI finished red" and you triage a build that never ran |
 | `timeout` is available | **GNU coreutils** — absent on stock macOS/BSD | A "portable" recipe dies with `command not found` |
 
@@ -141,10 +144,12 @@ Both PR-driving skills depend on these; re-verify if behaviour diverges.
   Batch a whole round into one push.
 - **Codex** (`chatgpt-codex-connector[bot]`) — posts **no status check at all**, so it
   never appears in the rollup and silence from it is ambiguous. It is nonetheless the
-  **highest-signal reviewer** observed here. Measured latency: **2–4 minutes after every
-  push, 17/17** — so a short quiet period after checks settle catches it reliably; long
-  waits are unnecessary and "it hasn't reported" usually means *you aren't looking at
-  comments*.
+  **highest-signal reviewer** observed here. On one 16-commit PR it arrived **2–4
+  minutes after every push, 17/17** — that is one observed path, not a guarantee.
+  The bot snapshot also records a slow path (no response ~8 minutes after an
+  explicit trigger). Neither a push nor a tag guarantees timely review. Bound the
+  wait, then disclose if it never reported — don't treat a short quiet period as
+  proof it looked.
 - **Findings arrive as comments, not check failures.** On a 16-commit PR: **44
   comment-delivered findings, 0 failing checks.** Any wait that only watches checks —
   including `gh pr checks --watch` — reports "all settled" while every real finding sits
@@ -171,7 +176,9 @@ This repo uses a **feature-branch + PR** workflow. Do **not** commit directly to
 ## Conventions
 
 - One concern per skill. Split rather than overload.
-- Bump `metadata.version` (semver) on a meaningful change.
+- Bump `metadata.version` (semver) on a meaningful change. Publisher metadata
+  alone (`author:` rename, display-name/branding) is not a version bump —
+  consumers resolve skills by repo path, not by that field.
 - Conventional Commits for messages (`feat(skill): …`, `docs: …`, `fix: …`).
 
 ## Writing skills that survive review
@@ -187,13 +194,15 @@ defects here, and each is cheap to avoid once named.
   **simplify or drop it** rather than patch it a third time.
 - **Any construct that folds several results into one exit status will hide the one that
   failed.** Same defect, three costumes, three separate rounds: `$(cmd) || echo 0` turned
-  an API error into "zero results"; `export VAR=$(cmd)` always returns 0; `{ a; b; }` and
-  pipelines take the *last* command's status. Capture and test each lookup on its own.
+  an API error into "zero results"; `export VAR=$(cmd)` always returns 0; `{ a; b; }`
+  takes the *last* command's status; a pipeline does too unless `pipefail` is set.
+  Capture and test each lookup on its own.
 - **A failed lookup is missing evidence, never a negative result.** Fail closed. Most
-  fail-opens here were an error path quietly reading as "nothing found".
+  fail-open cases here were error paths quietly reading as "nothing found".
 - **Prefer an allowlist of the terminal state over a denylist of pending ones.**
   Enumerating `queued|in_progress|pending` went stale the moment `waiting`/`requested`
-  appeared. `!= "completed"` cannot.
+  appeared. Treat only `status == "completed"` as terminal; then read `conclusion`
+  to distinguish `success`, `failure`, `cancelled`, and other outcomes.
 - **Silence is not success.** A guard, watcher, or query that cannot emit on its failure
   path is indistinguishable from a quiet system. Two watchers in one session were each
   half-dead for many rounds without ever announcing it. Before trusting one, make it
@@ -203,18 +212,19 @@ defects here, and each is cheap to avoid once named.
   away. Simplification is the same hazard in reverse: **diff what you delete** — one
   "cleanup" silently removed a safeguard and reopened a closed fail-open.
 - **Verify a reviewer's suggested *mechanism*, not just its concern.** Twice a proposed
-  fix (`--slurp`) was itself unavailable on this toolchain. Take the finding; check the
-  remedy.
+  fix (`--slurp`) was itself unavailable on the `gh` that shipped the skill. Take the
+  finding; check the remedy.
 
 ## Driving review (see `skills/autonomous-pr-driver/`)
 
 - **Stop pushing ≠ stop watching.** Diminishing returns should end the *fix cadence*, not
   the session's attention. Ending both is what makes a driver look like it gave up.
-- **Prefer a stateless re-sweep over a clever incremental watcher.** Every watcher bug
-  here lived in incremental state — seen-sets, author filters, per-page `jq`. Re-running
-  the full enumeration from scratch has nothing to rot.
-- **A PR subscription without an author filter feeds itself.** Independently observed in
-  two separate implementations: the loop's own replies wake it. Filter your own identity.
+- **Prefer a stateless re-sweep over a clever incremental watcher.** The watcher bugs
+  here came from incremental state — seen-sets and per-page `jq` — and from incorrect
+  author-filter handling. Re-running the full enumeration from scratch has nothing to rot.
+- **A PR subscription that processes its own events feeds itself.** Independently
+  observed in two separate implementations: the loop's own replies wake it. Filter
+  out the current agent's identity even when the sweep is stateless.
 - **Pushed events can be stale.** A webhook describes the moment it was emitted, so an
   event may name a commit that is no longer HEAD. Re-read HEAD before acting; polling
   always reads current state, push does not.

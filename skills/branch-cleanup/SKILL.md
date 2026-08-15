@@ -4,7 +4,7 @@ description: "Install GitHub Actions workflows that delete stale git branches sa
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.1.0"
+  version: "1.1.1"
 ---
 
 # Branch cleanup
@@ -135,7 +135,7 @@ officially documented. The scheduled sweep is what covers the first case.
 ## Rolling out across many repos
 
 - **Pin the reusable workflow to a full commit SHA** — it holds `contents: write`.
-- **Substitute your own org** for `stealth-factory` in the caller's `uses:`.
+- **Replace `YOUR-ORG`** in the caller's `uses:` with your organisation.
 - Start with `sweep_delete: false` (the default) and read a few reports before enabling
   deletion — the sweep is the path that touches branches nobody explicitly closed.
 

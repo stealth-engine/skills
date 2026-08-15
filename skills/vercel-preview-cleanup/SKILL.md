@@ -4,7 +4,7 @@ description: "Install a GitHub Actions workflow that deletes a branch's Vercel P
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.0.0"
+  version: "1.0.1"
 ---
 
 # Vercel preview cleanup
@@ -156,7 +156,7 @@ instantly. Two honest caveats:
 
 - **Pin the reusable workflow to a full commit SHA.** It holds delete
   permissions; `@main` means every repo silently picks up any change to it.
-- **Substitute your own org** for `stealth-factory` in the caller's `uses:`.
+- **Replace `YOUR-ORG`** in the caller's `uses:` with your organisation.
 - **`VERCEL_PROJECT_IDS` misconfiguration is the top operational hazard.** Point a repo
   at a project belonging to a *different* repo and the sweep sees all of that project's
   refs as orphans. Verify the mapping per repo before enabling `sweep_delete`.
