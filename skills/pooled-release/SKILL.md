@@ -2,7 +2,7 @@
 name: pooled-release
 description: "Cut fewer, batched releases (a 'release train') instead of one per merge — by triggering semantic-release on demand or on a cadence rather than on every push to main. Use when releasing on every merge is too noisy, when you want one larger readable changelog per release, to add a manual 'cut a release' button (workflow_dispatch) or a scheduled/weekly release, to set up prerelease channels (next/beta → promote to stable), or when deciding whether you need a release branch."
 metadata:
-  author: stealth-engine
+  author: stealth-factory
   co-author: wiiiimm
   version: "1.2.1"
 ---

@@ -2,7 +2,7 @@
 name: git-trunk-branch-and-pr-automation
 description: "Trunk-based Git workflow with enforced branch naming and squash-merge PR titles, including how stacked PRs fit it. Use when setting up or standardising a branch/PR workflow, naming branches (feature/ fix/ hotfix/ and AI-agent prefixes claude/ cursor/ codex/ copilot/ codegen-bot/ dependabot/), configuring squash-only merges where the PR title becomes the commit and the body is the concatenated commits, making the PR title a valid Conventional Commit, adding GitHub Actions that validate branch names or auto-normalise PR titles, fixing a PR-title bot that loops, or deciding trunk vs release branches. Also use for stacked / dependent PRs — GitHub's native stacks (gh stack), Graphite (gt) or Cursor Origin — when stack layers fail branch-name checks, CI cost multiplies across a stack, a workflow condition on base.ref stops matching, gh pr merge fails on a stack, or you need github.event.pull_request.stack metadata. Covers the GitHub repo settings, the validation/normalisation workflows, and how it feeds semantic-release."
 metadata:
-  author: stealth-engine
+  author: stealth-factory
   co-author: wiiiimm
   version: "1.3.0"
 ---

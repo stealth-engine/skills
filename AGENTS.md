@@ -27,7 +27,7 @@ manifest file is needed — the `skills` CLI auto-discovers these paths.
 name: my-skill                # kebab-case, matches the folder
 description: <one line>        # SEE BELOW — this is the most important field
 metadata:
-  author: stealth-engine
+  author: stealth-factory
   version: "1.0.0"            # bump on meaningful change (semver)
 ---
 
@@ -109,7 +109,7 @@ for d in skills/*/; do n=$(basename "$d"); \
   ln -sfn "../../skills/$n" ".agents/skills/$n"; done
 ```
 
-(Consumers of this repo install instead with `npx skills add stealth-engine/skills`.)
+(Consumers of this repo install instead with `npx skills add stealth-factory/skills`.)
 
 ## Environment facts — verified on this machine, not from docs
 

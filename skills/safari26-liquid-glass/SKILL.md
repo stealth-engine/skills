@@ -2,7 +2,7 @@
 name: safari26-liquid-glass
 description: How iOS 26 / iPadOS 26 Safari's "Liquid Glass" translucent status & address bars interact with web content, the viewport/keyboard facts behind them, and what to watch for when a design gets creative (immersive/edge-to-edge layouts, custom drawers/modals, gesture panning, themeable backgrounds, canvas). Use when an iPhone/iPad web page shows black/grey bars, content "cut off" at the bar edge, cropped shadows, the top status bar turning opaque/tinted under a sticky or fixed header, a drawer/modal that breaks the layout, an inner scroll that won't scroll, the page jumping after the soft keyboard closes, or a canvas blur that won't render on iOS — or before building any full-screen/immersive iOS web UI.
 metadata:
-  author: stealth-engine
+  author: stealth-factory
   co-author: wiiiimm
   version: "2.3.0"
 ---

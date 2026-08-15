@@ -2,7 +2,7 @@
 name: conventional-commits
 description: "The Conventional Commits format — also called \"semantic commits\" / semantic commit messages — a `type(scope): description` header (`feat`, `fix`, …) plus an optional `BREAKING CHANGE` footer, and how it makes history machine-readable to drive automated version bumps and changelogs. Use when writing a commit message or PR title, deciding the type/scope/bump for a change, setting up or fixing a repo's commit convention, making commits parseable by semantic-release / changelog tooling, validating PR titles, or when a release didn't bump or the changelog came out blank because a commit wasn't conventional. Covers the type→semver mapping, breaking changes, scopes, monorepo scopes, and squash-merge PR titles."
 metadata:
-  author: stealth-engine
+  author: stealth-factory
   co-author: wiiiimm
   version: "1.1.0"
 ---

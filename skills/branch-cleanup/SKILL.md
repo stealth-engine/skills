@@ -2,7 +2,7 @@
 name: branch-cleanup
 description: "Install GitHub Actions workflows that delete stale git branches safely — the closed-without-merging path plus a scheduled orphan sweep — and enable the native delete_branch_on_merge setting that handles merged PRs. Host-agnostic: no Vercel, Neon or any external service required, works in any GitHub repo. Never deletes a branch that open PRs target as their BASE (that would CLOSE those PRs and destroy a stack). Use when asked to clean up / delete stale, merged, abandoned or orphaned branches, stop branches piling up, auto-delete branches after merge, enable delete_branch_on_merge across an org, add a branch retention or sweep workflow, or safely prune branches in a repo that uses stacked PRs — GitHub's native stacks (gh stack), Graphite, ghstack or spr."
 metadata:
-  author: stealth-engine
+  author: stealth-factory
   co-author: wiiiimm
   version: "1.1.0"
 ---
@@ -135,7 +135,7 @@ officially documented. The scheduled sweep is what covers the first case.
 ## Rolling out across many repos
 
 - **Pin the reusable workflow to a full commit SHA** — it holds `contents: write`.
-- **Substitute your own org** for `stealth-engine` in the caller's `uses:`.
+- **Substitute your own org** for `stealth-factory` in the caller's `uses:`.
 - Start with `sweep_delete: false` (the default) and read a few reports before enabling
   deletion — the sweep is the path that touches branches nobody explicitly closed.
 

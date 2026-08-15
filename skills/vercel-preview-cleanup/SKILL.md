@@ -2,7 +2,7 @@
 name: vercel-preview-cleanup
 description: "Install a GitHub Actions workflow that deletes a branch's Vercel PREVIEW deployments when that branch is deleted — every deployment it accumulated, not just the aliased URL (Vercel keeps one immutable deployment per push, so a 15-push branch leaves 15 live URLs). Requires Vercel; if you just want stale git branches deleted, use the branch-cleanup skill instead. Use when asked to clean up / delete orphaned Vercel preview deployments, stop preview deployments piling up, remove previews for merged or deleted branches, wire an `on: delete` cleanup workflow, reconcile Vercel deployments against branches that still exist, back-fill deletion of previews already accumulated, or do Vercel deployment housekeeping across a monorepo's projects."
 metadata:
-  author: stealth-engine
+  author: stealth-factory
   co-author: wiiiimm
   version: "1.0.0"
 ---
@@ -156,7 +156,7 @@ instantly. Two honest caveats:
 
 - **Pin the reusable workflow to a full commit SHA.** It holds delete
   permissions; `@main` means every repo silently picks up any change to it.
-- **Substitute your own org** for `stealth-engine` in the caller's `uses:`.
+- **Substitute your own org** for `stealth-factory` in the caller's `uses:`.
 - **`VERCEL_PROJECT_IDS` misconfiguration is the top operational hazard.** Point a repo
   at a project belonging to a *different* repo and the sweep sees all of that project's
   refs as orphans. Verify the mapping per repo before enabling `sweep_delete`.

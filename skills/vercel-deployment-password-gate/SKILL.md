@@ -2,7 +2,7 @@
 name: vercel-deployment-password-gate
 description: "A free DIY reimplementation of Vercel's $150/mo Advanced Deployment Protection add-on — all three features (Password Protection, private/prod deployments, Deployment Protection Exceptions) plus named automation bypass tokens — a middleware gate for ANY framework on Vercel (Next.js proxy, or SvelteKit/Nuxt/Astro/Remix/static via Routing Middleware). Gates previews by default, production opt-in; fully branded unlock page; zero prod cost. Use when asked to password-protect or basic-auth a preview/staging URL, avoid or cancel that add-on, password-protect on a Hobby plan, brand/white-label a password wall, add a login that \"shows once and stays unlocked\", set or ROTATE the password, add/remove bypass tokens for CI or automation (Lighthouse, uptime), make one preview domain public, protect previews on an app with NO existing middleware, gate a production or pre-launch site with a shared password (coming-soon, client demo, internal tool), or choose between a DIY gate and Vercel Authentication (free team SSO)."
 metadata:
-  author: stealth-engine
+  author: stealth-factory
   co-author: wiiiimm
   version: "1.11.11"
 ---
