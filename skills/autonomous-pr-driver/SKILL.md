@@ -2,7 +2,7 @@
 name: autonomous-pr-driver
 description: "Autonomously drive a pull request to merge-ready — opening or attaching to it, then resolving automated code review (triage findings, fix the valid, reject the invalid, push, loop) and pinging a human to merge. Knows when to STOP: at diminishing returns (niche/trivial/contradictory findings, severity trending down, or review budget accruing) it declares the PR good-to-merge on substance and pauses rather than auto-looping to chase a bot to zero comments — resuming only if the user insists or a genuinely important finding appears. Use when asked to 'drive / ship / land this PR', 'get the PR green', 'resolve the PR review comments', 'address the CodeRabbit / Cursor / Bugbot / Codex findings', 'fix the code review and push', 'stop over-fixing / merge it', or to loop on PR reviews until checks pass. Covers stacked PRs, where gh pr merge fails and gh stack merge lands the stack atomically, and portable waiting across Cursor / Replit / sandboxes: prefer a host event watcher, else gh pr checks --watch, else poll, else hand off. Warns that a green check can mean the reviewer never looked (CodeRabbit 'Review rate limited') and that comment-only reviewers like Codex post no check at all."
 metadata:
-  author: stealth-engine
+  author: stealth-factory
   co-author: wiiiimm
   version: "1.8.0"
 ---

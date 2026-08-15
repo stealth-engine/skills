@@ -6,8 +6,8 @@
 #
 # DRY RUN BY DEFAULT. Set APPLY=1 to actually PATCH.
 #
-#   ORG=stealth-engine ./enable-auto-delete-org.sh
-#   ORG=stealth-engine APPLY=1 ./enable-auto-delete-org.sh
+#   ORG=stealth-factory ./enable-auto-delete-org.sh
+#   ORG=stealth-factory APPLY=1 ./enable-auto-delete-org.sh
 #
 # Skips: archived repos, forks (unless INCLUDE_FORKS=1), and repos where you lack admin
 # (reported, not failed — a 403 there is expected, not a bug).

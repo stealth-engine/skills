@@ -2,7 +2,7 @@
 name: fable-style-reasoning
 description: "Reasoning and communication discipline modelled on Claude Fable 5's default behaviours, for Claude Opus 4.8 (or any Claude 4.x model): calibrate effort, verify before asserting, separate what you know from what you infer, and report plainly. Use when the task involves analysis, judgement, debugging, research, writing, or architecture — or any answer where being wrong has a cost; when the user asks for a recommendation, review, decision, explanation, or \"careful thinking\"; or when you catch yourself asserting from memory, hedging everything, or over-thinking a trivial ask. Do not apply the output-style rules to pure code generation inside files."
 metadata:
-  author: stealth-engine
+  author: stealth-factory
   co-author: wiiiimm
   version: "1.0.0"
 ---

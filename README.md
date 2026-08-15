@@ -1,4 +1,4 @@
-# Stealth Engine — Agent Skills
+# Stealth Company — Agent Skills
 
 > _I don't know what you're building. I don't know what bug you're chasing. But what
 > I **do** have is a very particular set of skills — skills acquired over a very long
@@ -20,16 +20,16 @@ Using the [`skills` CLI](https://github.com/vercel-labs/skills) (no install need
 
 ```bash
 # Interactive — pick which skills (and which agents) to install:
-npx skills add stealth-engine/skills
+npx skills add stealth-factory/skills
 
 # Browse what's in here without installing:
-npx skills add stealth-engine/skills --list
+npx skills add stealth-factory/skills --list
 
 # Install a specific skill:
-npx skills add stealth-engine/skills --skill safari26-liquid-glass
+npx skills add stealth-factory/skills --skill safari26-liquid-glass
 
 # Install everything, globally (available in every project):
-npx skills add stealth-engine/skills --all -g
+npx skills add stealth-factory/skills --all -g
 ```
 
 Manage installed skills with `npx skills list`, `npx skills update`, and
@@ -93,7 +93,7 @@ how to keep the body focused, etc.).
 
 ## License
 
-[MIT](./LICENSE) © Stealth Engine
+[MIT](./LICENSE) © Stealth Company
 
 ---
 

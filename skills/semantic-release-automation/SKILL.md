@@ -2,7 +2,7 @@
 name: semantic-release-automation
 description: "Automate versioning, changelog, tags, GitHub Releases, and npm publishing from Conventional Commits with semantic-release. Use when setting up or debugging automated releases, wiring a `.releaserc` / `release` config and the plugin pipeline (commit-analyzer, release-notes-generator, changelog, npm, git, github), making `main` cut a version on merge, generating CHANGELOG.md, publishing to npm or creating a GitHub Release per release, doing per-package releases in a monorepo (per-package tags + paths-filter matrix), pooling commits into a less-frequent release, or fixing a release that didn't fire / a CI loop from the release commit. Covers the single-package and monorepo flavors and the GitHub Actions workflow."
 metadata:
-  author: stealth-engine
+  author: stealth-factory
   co-author: wiiiimm
   version: "1.3.1"
 ---

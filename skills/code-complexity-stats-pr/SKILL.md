@@ -2,7 +2,7 @@
 name: code-complexity-stats-pr
 description: Add a GitHub Actions workflow that posts code-size and cost statistics — lines of code, per-language breakdown, complexity, and a COCOMO "what would this cost to build" estimate — as a sticky comment on every pull request, using scc. Use when you want a per-PR code-stats or "worth of the codebase" comment, to show LOC / language breakdown or an estimated development cost/effort on PRs, to set up scc (Sloc Cloc and Code) in CI, to post or upsert a single self-updating bot comment from GitHub Actions, or to change the COCOMO salary/currency. Covers fork-PR token limits, runner architecture, version pinning, and comment pagination.
 metadata:
-  author: stealth-engine
+  author: stealth-factory
   co-author: wiiiimm
   version: "1.2.0"
 ---
