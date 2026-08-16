@@ -34,11 +34,16 @@ forward procedure does not apply: it assumes the old path still exists and would
 try to move a repo that is gone. Go to
 [step 8 of the playbook](./reference/playbook.md) — the metadata is untouched, so
 it is the same remap minus the repo move. Nothing is lost by having waited; the
-slug dir still holds every transcript. Recover the old path from the registry keys
-that no longer exist on disk (verified: this machine carries 8 such orphans from
-an earlier move) and confirm it against a transcript's `cwd` — the one place that
-field is the right evidence, because you are identifying a path rather than
-deriving a slug from it.
+slug dir still holds every transcript. Recover the old path by enumerating the
+`projects` keys in `~/.claude.json` that no longer exist on disk, then confirm
+which is this repo against a transcript's `cwd` — the one place that field is the
+right evidence, since you are identifying a path rather than deriving a slug from
+it. (Orphaned keys are common: the machine this was written on had eight, left by
+an earlier move.)
+
+**Do not `git worktree prune` in this state.** Every moved worktree looks
+`prunable` to git until the repair runs, and pruning destroys linkage that repair
+can no longer restore — verified.
 
 The slug dir holds more than transcripts:
 

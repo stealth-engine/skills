@@ -12,7 +12,10 @@ For every linked worktree of OLD_REPO, prints one row:
          outside — the worktree path does NOT change: LEAVE its slug dir alone
                    (moving it orphans those sessions). It still needs repair,
                    because its pointer into the repo changed.
-  MOVE   move-slug / keep-slug (keep also when both slugs flatten to the same name)
+  MOVE   move-slug  — its slug dir exists and must be moved
+         keep-slug  — leave it (outside worktree, or both slugs flatten alike)
+         no-sessions— Claude Code never ran in this worktree, so there is no slug
+                      dir to move. It still needs `git worktree repair`.
   DEST   absent  — destination slug free
          SAME    — destination is the source (identical slugs); do not move
          EXISTS  — STOP: another project may own it; slugs collide, so inspect
@@ -88,7 +91,10 @@ def main(argv: list[str]) -> int:
         new_path = new_repo + path[len(old_repo):] if inside else path
         old_slug, new_slug = slug(path), slug(new_path)
 
-        if old_slug in seen_slugs:
+        if not os.path.lexists(os.path.join(projects, old_slug)):
+            # never ran Claude Code here: nothing to move, but still repair it
+            dest, move = "n/a", "no-sessions"
+        elif old_slug in seen_slugs:
             # two of this repo's worktrees flatten to one slug: their sessions
             # already share a directory, so neither move is safe.
             dest, move = "COLLIDE", "STOP"
@@ -102,7 +108,7 @@ def main(argv: list[str]) -> int:
             stop = True
         else:
             dest, move = "absent", "move-slug"
-        if not inside and dest != "COLLIDE":
+        if not inside and dest not in ("COLLIDE", "n/a"):
             move = "keep-slug"
         seen_slugs.setdefault(old_slug, path)
 

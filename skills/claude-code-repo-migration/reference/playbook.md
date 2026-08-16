@@ -165,7 +165,8 @@ Then **prove the backup**, because `ls -la` only shows that files exist:
 tar -tzf "$BK/untracked-files.tgz" > "$BK/untracked-listing.txt"   # check THIS succeeded
 wc -l < "$BK/untracked-listing.txt"    # then count — vs the untracked count you expect
 python3 -c "import json,sys; json.load(open(sys.argv[1])); print('registry backup parses')" "$BK/claude.json.bak"
-ls -1 "$BK/projects-slug-backup"/*.jsonl | wc -l   # == the session count from step 1
+ls -1 "$BK/projects-slug-backup"/*.jsonl > "$BK/backup-sessions.txt"   # check THIS succeeded
+wc -l < "$BK/backup-sessions.txt"                  # == the session count from step 1
 ```
 
 `tar -tzf … | wc -l` is the same trap as `git status | wc -l`: a missing or
@@ -237,8 +238,18 @@ git works inside it:
 git -C "<a worktree path>" status --short
 ```
 
-`git worktree prune` removes entries whose directory is genuinely gone — run it
-only after confirming nothing uncommitted lives there.
+**Never run `git worktree prune` before the repair.** Between the move and the
+repair, git believes every moved worktree is gone — `worktree list` marks them
+`prunable gitdir file points to non-existent location`, because it is still
+looking at the *old* path. Pruning then deletes the admin entry for a worktree
+that is perfectly fine, and **`git worktree repair` cannot rescue it afterwards**.
+
+Verified end to end: after moving a repo containing `wts/one`, `prune` reported
+`Removing worktrees/one: gitdir file points to non-existent location`, and the
+follow-up repair failed with `unable to locate repository; .git file does not
+reference a repository`. The files survive; the git linkage does not. Prune only
+*after* a successful repair, and only for worktrees whose directory you have
+confirmed is genuinely gone.
 
 ## 5. Verify
 
@@ -317,9 +328,17 @@ Everything needed is in `$BK`:
 ```bash
 cp "$BK/claude.json.bak" "$(cat "$BK/claude.json.realpath")"   # write THROUGH the symlink
 mv "$NEW_REPO" "$OLD_REPO"
+# slug move ONLY if the slugs actually differ; delete the step-3 compatibility
+# symlink at $PROJ/$OLD_SLUG first, if you created one
 mv "$PROJ/$NEW_SLUG" "$PROJ/$OLD_SLUG"
 git -C "$OLD_REPO" worktree repair
 ```
+
+The slug `mv` is conditional for the same two reasons the forward path is: with
+equal slugs it moves a directory onto itself, and if step 3 left the compatibility
+symlink then `$PROJ/$OLD_SLUG` *is* a link to `$PROJ/$NEW_SLUG`, so the move
+resolves to moving the directory into itself. Either way it fails and rollback
+stops before the worktree repair. Check both, then move.
 
 Restore the registry to its **realpath** (step 2 recorded it), so a dotfile-managed
 symlink keeps pointing where it did instead of being replaced by a plain file.
@@ -397,14 +416,44 @@ now**, then run the normal procedure with these differences:
 - Step 4: repair the worktrees from `$NEW_REPO` exactly as written.
 - Step 5: verify as written.
 
-**Worktree slugs in this case** need the old paths, which `git` can no longer
-report (it only knows where the worktrees are now). Reconstruct them by taking
-the current worktree paths from `$NEW_REPO`, rewriting the `$NEW_REPO` prefix back
-to `$OLD_REPO`, and slugging both forms with `claude-slug.py` — the `exists` marker
-tells you which old slug dirs are really there. Worktrees that were always outside
-the repo never changed path and need nothing.
+**Worktree slugs in this case** come out of git's *stale* view, which is the
+opposite of what you might expect. Until the repair runs, `git worktree list
+--porcelain` from `$NEW_REPO` still reports each nested worktree at its **old**
+path, flagged `prunable gitdir file points to non-existent location` — verified on
+a moved fixture repo, where git reported `…/old/wts/one` while the directory
+physically sat at `…/new/wts/one`.
 
-If the move was long ago, expect the trust dialog to have been re-accepted at the
-new path already: the registry then has **both** keys, and the remap script will
-refuse rather than merge them. That refusal is correct — decide by hand which
-entry's `allowedTools`/`mcpServers` to keep, delete the other key, and re-run.
+So git hands you the old paths for free. Slug those directly, then rewrite the
+`$OLD_REPO` prefix **to** `$NEW_REPO` to get the current paths — which are both
+the new slugs and the explicit arguments `git worktree repair` needs:
+
+```bash
+git -C "$NEW_REPO" worktree list --porcelain -z   # paths here are the OLD ones
+```
+
+Do not try to rewrite `$NEW_REPO` back to `$OLD_REPO`; those strings are not in
+git's output yet, so it would change nothing and you would recover no pairing.
+Worktrees that were always outside the repo never changed path and need nothing.
+
+**And do not prune first.** In exactly this state every moved worktree looks
+prunable, and pruning destroys the linkage beyond what repair can fix — see the
+warning in step 4. Repair, then prune if anything is still genuinely absent.
+
+If the move was long ago, expect Claude Code to have been run at the new path
+already. That produces **two** of everything, and neither may be merged blindly:
+
+- **Two registry keys.** The remap script refuses rather than merge. Correct
+  behaviour — decide by hand which entry's `allowedTools`/`mcpServers` to keep,
+  delete the other key, then re-run.
+- **Two slug dirs**, `$OLD_SLUG` (the history) and `$NEW_SLUG` (whatever has
+  accumulated since). **Do not `mv` one onto the other**: with the destination
+  present, `mv` puts the old slug directory *inside* the new one, where Claude
+  Code will never look — a silent loss of exactly the history you came to rescue.
+  Merge their **contents** instead: move the `<uuid>.jsonl` files, their
+  `.wakatime` sidecars and `<uuid>/` directories across (uuids are unique, so
+  they will not clash), then reconcile `memory/` by hand — both sides may hold a
+  `MEMORY.md`. Remove the emptied old dir only once you have listed what moved.
+
+This is the same collision the slug rule warns about, arriving from the other
+direction: an occupied destination is a thing to inspect, never a thing to
+overwrite.
