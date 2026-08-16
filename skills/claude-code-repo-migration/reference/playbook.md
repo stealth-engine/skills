@@ -198,6 +198,13 @@ tar --null -C "$OLD_REPO" -T "$BK/untracked-list.z" -czf "$BK/untracked-files.tg
   you to check for afterwards. Copy the ones this repo actually has, by name, into
   `$BK` as a separate step. (Dropping `--exclude-standard` is not the answer: it
   would pull in `node_modules` and every build artefact.)
+- **Nor does it cover a dirty submodule.** Verified on a fixture: with edits inside
+  a submodule, `git diff HEAD --binary` records only
+  `-Subproject commit <sha>` / `+Subproject commit <sha>-dirty` — the actual file
+  change is nowhere — and `git ls-files --others` emits nothing for the
+  submodule's untracked files. If `git submodule status` shows any entry prefixed
+  `+` or with a `-dirty` suffix, back that submodule up on its own (run the same
+  two commands inside it) before moving anything.
 
 Then **prove the backup**, because `ls -la` only shows that files exist:
 
