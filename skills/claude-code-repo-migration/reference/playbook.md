@@ -8,6 +8,17 @@ Every lookup below is its own command with its own result. Do not fold several
 into one `if`/pipeline/`$(…)` — a folded exit status hides the one that failed,
 and a failed lookup is missing evidence, never a negative result.
 
+Concretely, the forms that keep reappearing and are banned here: **`something |
+wc -l`** (the count is `wc`'s status — a failed `ls`/`git`/`tar` reports `0`,
+which reads as "clean tree" / "no sessions" / "empty archive"), and **`cmd | tee
+file`** (`tee`'s status hides a non-zero `cmd`, including a deliberate STOP exit).
+Write the output to a file, check *that* command, then count or read the file.
+
+Likewise **`[ -e X ]` follows symlinks**, so a dangling link reports the
+destination as clear and the later `mv` fails after earlier steps have already
+landed. Test `[ -e X ] || [ -L X ]` — the same reason the helper scripts use
+`lexists` rather than `isdir`.
+
 Run this **from outside the repo being moved** (e.g. `cd ~`) whenever you can.
 
 ## 0. Variables
@@ -36,9 +47,9 @@ a directory onto itself fails and would abort the chain.
 Destination must be clear. Both checks, separately:
 
 ```bash
-if [ -e "$NEW_REPO" ]; then echo "STOP: $NEW_REPO exists"; else echo "repo dest clear"; fi
+if [ -e "$NEW_REPO" ] || [ -L "$NEW_REPO" ]; then echo "STOP: $NEW_REPO exists"; else echo "repo dest clear"; fi
 if [ "$OLD_SLUG" = "$NEW_SLUG" ]; then echo "slug unchanged — no slug move"
-elif [ -e "$PROJ/$NEW_SLUG" ]; then echo "STOP: slug dest exists"
+elif [ -e "$PROJ/$NEW_SLUG" ] || [ -L "$PROJ/$NEW_SLUG" ]; then echo "STOP: slug dest exists"
 else echo "slug dest clear"; fi
 ```
 
@@ -55,14 +66,17 @@ What is being moved, and what is being left behind:
 ```bash
 ls -la "$(dirname "$OLD_REPO")"          # sibling repos you must NOT touch
 ls -la "$PROJ/$OLD_SLUG"                 # transcripts, .wakatime, memory/, <uuid>/ dirs
-ls -1 "$PROJ/$OLD_SLUG"/*.jsonl | wc -l  # session count — record it for verification
+ls -1 "$PROJ/$OLD_SLUG"/*.jsonl > "$BK/sessions-before.txt"   # check THIS succeeded
+wc -l < "$BK/sessions-before.txt"        # session count — record it for verification
 ```
 
 Every slug dir this repo owns beyond its own, derived from **real paths**, never
 from slug-name prefixes. Record the plan — later steps need it:
 
 ```bash
-python3 "$SKILL/scripts/worktree-slugs.py" "$OLD_REPO" "$NEW_REPO" | tee "$BK/worktree-plan.txt"
+python3 "$SKILL/scripts/worktree-slugs.py" "$OLD_REPO" "$NEW_REPO" > "$BK/worktree-plan.txt"
+# check the exit status HERE — non-zero is the STOP signal — then read the plan:
+cat "$BK/worktree-plan.txt"
 ```
 
 For each linked worktree it prints where it lives, whether its slug dir moves,
@@ -100,6 +114,12 @@ is a legitimate state to migrate from: sessions can exist in a repo you never
 committed. Record "unborn HEAD" instead of a SHA, and back the staged files up
 with `git diff --cached --binary`, which works there (verified). `git status
 --short` works either way.
+
+`--cached` alone is not the whole picture: a file staged and then edited again
+(`AM`) has a working-copy delta that the index diff doesn't carry, and the
+untracked archive skips it because the path is now tracked. In an unborn repo take
+**both** — `git diff --cached --binary` and `git diff --binary` — or archive the
+tracked working copy outright.
 
 `git status --short | wc -l` in one pipeline reports **0** when git fails, because
 the pipeline's status is `wc`'s. Zero then reads as "clean tree" — and the
@@ -265,9 +285,10 @@ confirmed is genuinely gone.
 git -C "$NEW_REPO" status --short > "$BK/status-after.txt"   # check THIS succeeded
 diff "$BK/status-before.txt" "$BK/status-after.txt"          # identical, not just equal counts
 git -C "$NEW_REPO" rev-parse HEAD             # == the pre-move HEAD
-if [ -e "$OLD_REPO" ]; then echo "STOP: old repo still exists"; else echo "old repo gone"; fi
+if [ -e "$OLD_REPO" ] || [ -L "$OLD_REPO" ]; then echo "STOP: old repo still exists"; else echo "old repo gone"; fi
 ls -la "$(dirname "$OLD_REPO")"               # siblings untouched
-ls -1 "$PROJ/$NEW_SLUG"/*.jsonl | wc -l       # == the pre-move session count
+ls -1 "$PROJ/$NEW_SLUG"/*.jsonl > "$BK/sessions-after.txt"    # check THIS succeeded
+diff "$BK/sessions-before.txt" "$BK/sessions-after.txt" | head   # same uuids, not just counts
 ls -la "$PROJ/$NEW_SLUG/memory"               # auto-memory came along
 ```
 
