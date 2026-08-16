@@ -29,6 +29,17 @@ registry remap. This body is the model and the rules.
 They are independent. Moving only the repo (2 and 3 left behind) is the common
 accident — and it is silent.
 
+**If the repo has already been moved**, which is how most people get here, the
+forward procedure does not apply: it assumes the old path still exists and would
+try to move a repo that is gone. Go to
+[step 8 of the playbook](./reference/playbook.md) — the metadata is untouched, so
+it is the same remap minus the repo move. Nothing is lost by having waited; the
+slug dir still holds every transcript. Recover the old path from the registry keys
+that no longer exist on disk (verified: this machine carries 8 such orphans from
+an earlier move) and confirm it against a transcript's `cwd` — the one place that
+field is the right evidence, because you are identifying a path rather than
+deriving a slug from it.
+
 The slug dir holds more than transcripts:
 
 ```text

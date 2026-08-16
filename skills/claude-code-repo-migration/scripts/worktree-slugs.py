@@ -16,6 +16,9 @@ For every linked worktree of OLD_REPO, prints one row:
   DEST   absent  — destination slug free
          SAME    — destination is the source (identical slugs); do not move
          EXISTS  — STOP: another project may own it; slugs collide, so inspect
+         COLLIDE — STOP: two of this repo's own worktrees flatten to one slug
+                   (`wts/a_b` and `wts/a-b`), so their sessions already share a
+                   directory. Sort that out by hand; do not move either.
 
 Then prints the `inside` worktrees' NEW paths, one per line, for
 `git worktree repair <path>...` after the move.
@@ -24,6 +27,13 @@ Reads `git worktree list --porcelain -z`: records are NUL-terminated, so paths
 containing spaces OR newlines survive. A line-based pipeline does not — verified:
 `git worktree list --porcelain | sed -n 's/^worktree //p'` reported a worktree
 whose path contained a newline as a *different, truncated* path.
+
+Both repo arguments are canonicalised with realpath before classification,
+because git reports canonical paths and a symlinked or `..`-bearing argument
+would otherwise misclassify the main worktree as external. Slugs are computed
+from the paths git reports. If a session was started through a *symlinked* path,
+Claude Code recorded the slug of the path as typed — check that one by hand with
+claude-slug.py.
 
 The trailing repair list is newline-separated for reading. If a path in it
 contains a newline, pass that one to `git worktree repair` by hand.
@@ -56,7 +66,9 @@ def main(argv: list[str]) -> int:
     if len(argv) != 2:
         print(__doc__.strip(), file=sys.stderr)
         return 2
-    old_repo, new_repo = (p.rstrip("/") for p in argv)
+    # realpath: git reports canonical paths, so comparing against an argument
+    # carrying a symlink or ".." would classify the main worktree as external.
+    old_repo, new_repo = (os.path.realpath(p) for p in argv)
     projects = os.path.expanduser("~/.claude/projects")
 
     try:
@@ -68,6 +80,7 @@ def main(argv: list[str]) -> int:
 
     moved: list[str] = []
     stop = False
+    seen_slugs: dict[str, str] = {}
     for path in paths:
         if path == old_repo:
             continue  # the main worktree — that is the repo move itself
@@ -75,15 +88,23 @@ def main(argv: list[str]) -> int:
         new_path = new_repo + path[len(old_repo):] if inside else path
         old_slug, new_slug = slug(path), slug(new_path)
 
-        if old_slug == new_slug:
+        if old_slug in seen_slugs:
+            # two of this repo's worktrees flatten to one slug: their sessions
+            # already share a directory, so neither move is safe.
+            dest, move = "COLLIDE", "STOP"
+            stop = True
+        elif old_slug == new_slug:
             dest, move = "SAME", "keep-slug"
-        elif os.path.isdir(os.path.join(projects, new_slug)):
+        elif os.path.lexists(os.path.join(projects, new_slug)):
+            # lexists, not isdir: a regular file or dangling symlink occupies
+            # the destination just as surely as a directory does.
             dest, move = "EXISTS", "move-slug"
             stop = True
         else:
             dest, move = "absent", "move-slug"
-        if not inside:
+        if not inside and dest != "COLLIDE":
             move = "keep-slug"
+        seen_slugs.setdefault(old_slug, path)
 
         print(f"{'inside' if inside else 'outside':7} {move:10} {dest:7} "
               f"{old_slug} -> {new_slug}   {path}")
@@ -98,8 +119,8 @@ def main(argv: list[str]) -> int:
     else:
         print("# no worktrees move with the repo")
     if stop:
-        print("\nSTOP: a destination slug already exists — inspect before moving anything",
-              file=sys.stderr)
+        print("\nSTOP: a destination slug is occupied, or two worktrees share one slug"
+              " — inspect before moving anything", file=sys.stderr)
         return 1
     return 0
 
