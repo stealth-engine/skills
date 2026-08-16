@@ -14,8 +14,9 @@ A plain `mv` of a repo works fine for git and breaks everything Claude Code keep
 dialog comes back, and the old transcripts sit in a directory nothing looks at
 any more. This skill is the remap that makes the move invisible.
 
-Commands live in [`reference/playbook.md`](./reference/playbook.md); two helpers
-live in [`scripts/`](./scripts). This body is the model and the rules.
+Commands live in [`reference/playbook.md`](./reference/playbook.md); three helpers
+live in [`scripts/`](./scripts) — slug derivation, the worktree move plan, and the
+registry remap. This body is the model and the rules.
 
 ## The three things, and only one of them is the repo
 
@@ -73,12 +74,18 @@ Four consequences:
 
 ## Enumerate the slug dirs the repo owns — from real paths, never string prefixes
 
-A repo with git worktrees owns **several** slug dirs. Get them by listing the real
-paths (`git worktree list`) and slugging each one — then split them by location:
+A repo with git worktrees owns **several** slug dirs, and they split by location:
 only worktrees **inside** the repo change path when the repo moves, so only their
 slug dirs move. A worktree parked **outside** the repo keeps its path, so its slug
-dir must be left exactly where it is (it still needs a git repair, since its
-pointer *into* the repo changed).
+dir must be left exactly where it is — moving it orphans those sessions (it still
+needs a git repair, since its pointer *into* the repo changed).
+
+[`scripts/worktree-slugs.py`](./scripts/worktree-slugs.py) does this
+classification, computes each old→new slug, flags an occupied destination, and
+emits the repair list. Do not hand-roll it from `git worktree list` text: a
+line-based pipeline mangles a path containing a newline (verified — it reported a
+*different, truncated* path), and splitting on whitespace truncates at a space.
+The script reads the NUL-terminated `-z` form.
 
 Do **not** collect them by prefix-matching slug names: because every separator
 flattens to `-`, `-a-b-c` may be `/a/b/c`, `/a/b-c` or `/a/b.c`. A sibling

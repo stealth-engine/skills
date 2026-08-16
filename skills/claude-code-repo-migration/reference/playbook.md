@@ -37,11 +37,18 @@ Destination must be clear. Both checks, separately:
 
 ```bash
 if [ -e "$NEW_REPO" ]; then echo "STOP: $NEW_REPO exists"; else echo "repo dest clear"; fi
-if [ -e "$PROJ/$NEW_SLUG" ]; then echo "STOP: slug dest exists"; else echo "slug dest clear"; fi
+if [ "$OLD_SLUG" = "$NEW_SLUG" ]; then echo "slug unchanged — no slug move"
+elif [ -e "$PROJ/$NEW_SLUG" ]; then echo "STOP: slug dest exists"
+else echo "slug dest clear"; fi
 ```
 
-A slug destination that exists may belong to a **different** project (separators
-all flatten to `-`, so distinct paths collide). Inspect before deciding anything.
+The equal-slug arm comes first on purpose: when both paths flatten to the same
+name, `$PROJ/$NEW_SLUG` **is** the source directory, so a bare existence check
+would report a collision against itself and stop a migration that is fine.
+
+A slug destination that exists for *different* slugs may belong to a **different**
+project (separators all flatten to `-`, so distinct paths collide). Inspect before
+deciding anything.
 
 What is being moved, and what is being left behind:
 
@@ -51,17 +58,18 @@ ls -la "$PROJ/$OLD_SLUG"                 # transcripts, .wakatime, memory/, <uui
 ls -1 "$PROJ/$OLD_SLUG"/*.jsonl | wc -l  # session count — record it for verification
 ```
 
-Every slug dir this repo owns, derived from **real paths**, never from slug-name
-prefixes. Record the list — later steps need it:
+Every slug dir this repo owns beyond its own, derived from **real paths**, never
+from slug-name prefixes. Record the plan — later steps need it:
 
 ```bash
-git -C "$OLD_REPO" worktree list --porcelain | sed -n 's/^worktree //p' > "$BK/worktree-paths.txt"
+python3 "$SKILL/scripts/worktree-slugs.py" "$OLD_REPO" "$NEW_REPO" | tee "$BK/worktree-plan.txt"
 ```
 
-Strip the prefix with `sed`, not `awk '{print $2}'` — a worktree path containing
-a space is silently truncated at the space (verified).
+For each linked worktree it prints where it lives, whether its slug dir moves,
+and whether the destination slug is free — then the list of paths to repair after
+the move. It exits non-zero if any destination slug is occupied.
 
-Feed those paths to `claude-slug.py`, then split them by **where they live**:
+Read the classification, because the two halves need opposite treatment:
 
 - **Inside `$OLD_REPO`** (e.g. `$OLD_REPO/.claude/worktrees/x`) — the path changes
   with the move, so its slug dir must move too, and its git admin files need repair.
@@ -70,15 +78,27 @@ Feed those paths to `claude-slug.py`, then split them by **where they live**:
   sessions. It still needs `git worktree repair`, because its pointer *into* the
   repo changed.
 
+Do not hand-roll this from `git worktree list` output. A line-based pipeline
+loses paths containing a newline — verified: `--porcelain | sed -n 's/^worktree
+//p'` reported such a worktree as a *different, truncated* path, and
+`awk '{print $2}'` truncates at a space as well. The script reads the `-z` form,
+whose records are NUL-terminated.
+
 Repo health, each on its own line:
 
 ```bash
-git -C "$OLD_REPO" status --short | wc -l    # record it
+git -C "$OLD_REPO" status --short > "$BK/status-before.txt"   # check THIS succeeded
+wc -l < "$BK/status-before.txt"                               # then count — record it
 git -C "$OLD_REPO" rev-parse HEAD            # record it
-git -C "$OLD_REPO" worktree list             # note which worktrees are inside vs outside the repo
 pgrep -af "next dev|vite|webpack|node .*dev"  # a dev server holding the tree open
 pgrep -af "claude"                            # other live sessions — see the registry warning
 ```
+
+`git status --short | wc -l` in one pipeline reports **0** when git fails, because
+the pipeline's status is `wc`'s. Zero then reads as "clean tree" — and the
+identical pipeline in step 5 fails the same way, so the two bogus counts agree
+and the verification passes. Write the status, check that command, then count the
+file.
 
 Every `~/.claude.json` reference, keys and values (the dry run *is* the inventory):
 
@@ -106,22 +126,39 @@ worktrees affected, the sibling repos being left alone, and whether any other
 
 ## 2. Back up (mutates nothing you care about)
 
+Run these one at a time and **check each one's exit status** — every line here is
+the thing you will need if the migration goes wrong:
+
 ```bash
 cp -a "$PROJ/$OLD_SLUG" "$BK/projects-slug-backup"
-cp -a ~/.claude.json "$BK/claude.json.bak"
+cp -L ~/.claude.json "$BK/claude.json.bak"       # -L: follow the symlink, copy CONTENTS
+readlink -f ~/.claude.json > "$BK/claude.json.realpath"   # note where it actually lives
 git -C "$OLD_REPO" diff HEAD --binary > "$BK/uncommitted-tracked.patch"
 git -C "$OLD_REPO" ls-files --others --exclude-standard -z > "$BK/untracked-list.z"
 tar --null -C "$OLD_REPO" -T "$BK/untracked-list.z" -czf "$BK/untracked-files.tgz"
-ls -la "$BK"
 ```
 
+- **`cp -L`, never `cp -a`, for the registry.** `-a` implies `-d` and copies a
+  symlink *as a symlink* (verified). A dotfile-managed `~/.claude.json` would then
+  give you a "backup" that is a link to the live file the remapper rewrites —
+  pointing at the post-migration state, with the original gone. Record the realpath
+  too, so rollback can restore the link arrangement rather than flattening it.
 - `diff HEAD --binary`, not bare `diff`: bare `git diff` omits **staged** changes
   and cannot carry binary content, so a plain patch silently loses both.
 - The file list is written and checked **before** `tar` reads it. Piping
   `ls-files | tar` hands `tar` an empty list when `ls-files` fails, and it happily
   produces an empty archive and exits 0 — a backup that looks fine and holds nothing.
 
-Back up each extra (worktree) slug dir the same way before touching it.
+Then **prove the backup**, because `ls -la` only shows that files exist:
+
+```bash
+tar -tzf "$BK/untracked-files.tgz" | wc -l    # vs the untracked count you expect
+python3 -c "import json,sys; json.load(open(sys.argv[1])); print('registry backup parses')" "$BK/claude.json.bak"
+ls -1 "$BK/projects-slug-backup"/*.jsonl | wc -l   # == the session count from step 1
+```
+
+An unverified backup is not a backup. Back up each extra (worktree) slug dir the
+same way before touching it.
 
 ## 3. Mutate — one `&&` chain, repo move LAST
 
@@ -168,12 +205,11 @@ points at the repo's old location):
 git -C "$NEW_REPO" worktree repair
 ```
 
-Then, for the worktrees that moved *with* the repo, pass their **new** paths.
-Take them from `$BK/worktree-paths.txt` (step 1) — the entries under `$OLD_REPO`,
-with the prefix rewritten to `$NEW_REPO`. Pass those explicit paths, one
-invocation, quoted. Do **not** glob `"$NEW_REPO"/.claude/worktrees/*`: worktrees
-nested anywhere else are missed, and with no matches Bash hands `git` a literal
-`*` and the command fails.
+Then, for the worktrees that moved *with* the repo, pass their **new** paths —
+the repair list printed at the end of `$BK/worktree-plan.txt` (step 1). Pass them
+as explicit quoted arguments. Do **not** glob `"$NEW_REPO"/.claude/worktrees/*`:
+worktrees nested anywhere else are missed, and with no matches Bash hands `git` a
+literal `*` and the command fails.
 
 ```bash
 git -C "$NEW_REPO" worktree list
@@ -192,7 +228,8 @@ only after confirming nothing uncommitted lives there.
 ## 5. Verify
 
 ```bash
-git -C "$NEW_REPO" status --short | wc -l     # == the pre-move count
+git -C "$NEW_REPO" status --short > "$BK/status-after.txt"   # check THIS succeeded
+diff "$BK/status-before.txt" "$BK/status-after.txt"          # identical, not just equal counts
 git -C "$NEW_REPO" rev-parse HEAD             # == the pre-move HEAD
 if [ -e "$OLD_REPO" ]; then echo "STOP: old repo still exists"; else echo "old repo gone"; fi
 ls -la "$(dirname "$OLD_REPO")"               # siblings untouched
@@ -231,24 +268,52 @@ Only cosmetic, and only safe for sessions that have **ended** (nothing is
 appending). It rewrites the old absolute path inside transcripts so `file:line`
 references resolve at the new location.
 
+Replace the path **literally**. Do not reach for `sed`: both paths are
+interpolated into a regex and a replacement, so `.` or `[` in `OLD_REPO` changes
+what matches, and `&`, `\` or the `#` delimiter in `NEW_REPO` corrupts or breaks
+the substitution. Nothing escapes them for you, and the failure is **silent** —
+verified: with `OLD_REPO=/home/u/a.b[1]/repo` the `sed` form matched nothing and
+left every transcript untouched while reporting success.
+
 ```bash
-for f in "$PROJ/$NEW_SLUG"/*.jsonl; do
-  sed "s#$OLD_REPO#$NEW_REPO#g" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
-done
+python3 - "$PROJ/$NEW_SLUG" "$OLD_REPO" "$NEW_REPO" <<'PY'
+import glob, os, sys
+d, old, new = sys.argv[1], sys.argv[2], sys.argv[3]
+for f in sorted(glob.glob(os.path.join(d, "*.jsonl"))):
+    with open(f, encoding="utf-8", errors="surrogateescape") as fh:
+        text = fh.read()
+    if old not in text:
+        continue
+    tmp = f + ".tmp"
+    with open(tmp, "w", encoding="utf-8", errors="surrogateescape") as fh:
+        fh.write(text.replace(old, new))
+    os.replace(tmp, f)
+    print("rewrote", os.path.basename(f))
+PY
 ```
 
-Skip any file a live session owns (including your own, if you symlinked in step 3).
+Skip any file a live session owns (including your own, if you symlinked in step 3)
+— remove it from the directory listing first, or move it aside.
 
 ## 7. Rollback
 
 Everything needed is in `$BK`:
 
 ```bash
-cp -a "$BK/claude.json.bak" ~/.claude.json
+cp "$BK/claude.json.bak" "$(cat "$BK/claude.json.realpath")"   # write THROUGH the symlink
 mv "$NEW_REPO" "$OLD_REPO"
 mv "$PROJ/$NEW_SLUG" "$PROJ/$OLD_SLUG"
 git -C "$OLD_REPO" worktree repair
 ```
+
+Restore the registry to its **realpath** (step 2 recorded it), so a dotfile-managed
+symlink keeps pointing where it did instead of being replaced by a plain file.
+
+Rollback needs the same two-form worktree repair as step 4: the no-argument call
+above fixes the worktrees that never moved, then repair the ones that moved back
+with the repo by passing their restored **old** paths explicitly. Re-running
+`worktree-slugs.py "$OLD_REPO" "$OLD_REPO"` lists them. Then prove it with
+`git -C "<a worktree>" status --short`, the same as the forward path.
 
 Then re-apply `uncommitted-tracked.patch` / untar `untracked-files.tgz` only if
 the working tree actually lost them.
