@@ -53,6 +53,18 @@ elif [ -e "$PROJ/$NEW_SLUG" ] || [ -L "$PROJ/$NEW_SLUG" ]; then echo "STOP: slug
 else echo "slug dest clear"; fi
 ```
 
+The destination must also not live **inside** the source — `/projects/repo` →
+`/projects/repo/archive/repo` is the shape to catch:
+
+```bash
+case "$NEW_REPO/" in "$OLD_REPO"/*) echo "STOP: destination is inside the source";; esac
+```
+
+`mkdir -p` would happily create that parent *within* the repo, and the `mv` then
+refuses with `cannot move … to a subdirectory of itself` (verified) — but only
+after the registry remap and the slug move have already landed, leaving the
+metadata pointing at a path the repo never reached.
+
 The equal-slug arm comes first on purpose: when both paths flatten to the same
 name, `$PROJ/$NEW_SLUG` **is** the source directory, so a bare existence check
 would report a collision against itself and stop a migration that is fine.
@@ -66,8 +78,8 @@ What is being moved, and what is being left behind:
 ```bash
 ls -la "$(dirname "$OLD_REPO")"          # sibling repos you must NOT touch
 ls -la "$PROJ/$OLD_SLUG"                 # transcripts, .wakatime, memory/, <uuid>/ dirs
-ls -1 "$PROJ/$OLD_SLUG"/*.jsonl > "$BK/sessions-before.txt"   # check THIS succeeded
-wc -l < "$BK/sessions-before.txt"        # session count — record it for verification
+ls -1 "$PROJ/$OLD_SLUG" > "$BK/sessions-before.txt"   # NAMES, not paths — check THIS succeeded
+wc -l < "$BK/sessions-before.txt"        # entry count — record it for verification
 ```
 
 Every slug dir this repo owns beyond its own, derived from **real paths**, never
@@ -287,8 +299,8 @@ diff "$BK/status-before.txt" "$BK/status-after.txt"          # identical, not ju
 git -C "$NEW_REPO" rev-parse HEAD             # == the pre-move HEAD
 if [ -e "$OLD_REPO" ] || [ -L "$OLD_REPO" ]; then echo "STOP: old repo still exists"; else echo "old repo gone"; fi
 ls -la "$(dirname "$OLD_REPO")"               # siblings untouched
-ls -1 "$PROJ/$NEW_SLUG"/*.jsonl > "$BK/sessions-after.txt"    # check THIS succeeded
-diff "$BK/sessions-before.txt" "$BK/sessions-after.txt" | head   # same uuids, not just counts
+ls -1 "$PROJ/$NEW_SLUG" > "$BK/sessions-after.txt"    # check THIS succeeded
+diff "$BK/sessions-before.txt" "$BK/sessions-after.txt"   # must be silent, status 0
 ls -la "$PROJ/$NEW_SLUG/memory"               # auto-memory came along
 ```
 
