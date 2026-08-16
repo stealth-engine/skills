@@ -94,6 +94,13 @@ pgrep -af "next dev|vite|webpack|node .*dev"  # a dev server holding the tree op
 pgrep -af "claude"                            # other live sessions — see the registry warning
 ```
 
+**Before the repo's first commit**, `git rev-parse HEAD` exits 128 (`ambiguous
+argument 'HEAD'`) and so does `git diff HEAD --binary` in step 2 — verified. That
+is a legitimate state to migrate from: sessions can exist in a repo you never
+committed. Record "unborn HEAD" instead of a SHA, and back the staged files up
+with `git diff --cached --binary`, which works there (verified). `git status
+--short` works either way.
+
 `git status --short | wc -l` in one pipeline reports **0** when git fails, because
 the pipeline's status is `wc`'s. Zero then reads as "clean tree" — and the
 identical pipeline in step 5 fails the same way, so the two bogus counts agree
@@ -145,7 +152,8 @@ tar --null -C "$OLD_REPO" -T "$BK/untracked-list.z" -czf "$BK/untracked-files.tg
   pointing at the post-migration state, with the original gone. Record the realpath
   too, so rollback can restore the link arrangement rather than flattening it.
 - `diff HEAD --binary`, not bare `diff`: bare `git diff` omits **staged** changes
-  and cannot carry binary content, so a plain patch silently loses both.
+  and cannot carry binary content, so a plain patch silently loses both. In a repo
+  with **no commits yet** this exits 128 — use `git diff --cached --binary` there.
 - `python3 -c 'os.path.realpath'`, not `readlink -f`: `-f` is GNU, and stock
   macOS `readlink` has no such flag. Same portability class as `mv -T` above — and
   this one would abort the backup step before the migration even starts.
@@ -301,22 +309,43 @@ the substitution. Nothing escapes them for you, and the failure is **silent** �
 verified: with `OLD_REPO=/home/u/a.b[1]/repo` the `sed` form matched nothing and
 left every transcript untouched while reporting success.
 
+Two things this has to get right, because it edits **serialised JSON** in place:
+
+- **Replace the JSON-escaped form of each path, not the raw form.** A destination
+  containing `"` or `\` — both legal in a POSIX path — has to land in the file
+  *escaped*. Verified: a raw replacement with a quote-bearing path turns every
+  line it touches into a `JSONDecodeError`, i.e. it destroys exactly the
+  transcripts you are trying to preserve.
+- **Preserve each file's mode.** A transcript can be `0600`; a temp file created
+  under the usual umask is not. Verified: `0600` became `0664` under `umask 002`,
+  exposing prompts and tool output to other local users on the machine.
+
 ```bash
 python3 - "$PROJ/$NEW_SLUG" "$OLD_REPO" "$NEW_REPO" <<'PY'
-import glob, os, sys
+import glob, json, os, stat, sys, tempfile
 d, old, new = sys.argv[1], sys.argv[2], sys.argv[3]
+esc_old, esc_new = json.dumps(old)[1:-1], json.dumps(new)[1:-1]  # JSON-escaped forms
 for f in sorted(glob.glob(os.path.join(d, "*.jsonl"))):
     with open(f, encoding="utf-8", errors="surrogateescape") as fh:
         text = fh.read()
-    if old not in text:
+    if esc_old not in text:
         continue
-    tmp = f + ".tmp"
-    with open(tmp, "w", encoding="utf-8", errors="surrogateescape") as fh:
-        fh.write(text.replace(old, new))
-    os.replace(tmp, f)
+    mode = stat.S_IMODE(os.stat(f).st_mode)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(f) or ".", prefix=".rewrite")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", errors="surrogateescape") as fh:
+            fh.write(text.replace(esc_old, esc_new))
+        os.chmod(tmp, mode)
+        os.replace(tmp, f)
+    except BaseException:
+        os.path.exists(tmp) and os.unlink(tmp)
+        raise
     print("rewrote", os.path.basename(f))
 PY
 ```
+
+Replacing the escaped form also leaves every other byte of the file untouched,
+which re-serialising the JSON would not.
 
 Skip any file a live session owns (including your own, if you symlinked in step 3)
 — remove it from the directory listing first, or move it aside.
@@ -433,7 +462,11 @@ git -C "$NEW_REPO" worktree list --porcelain -z   # paths here are the OLD ones
 
 Do not try to rewrite `$NEW_REPO` back to `$OLD_REPO`; those strings are not in
 git's output yet, so it would change nothing and you would recover no pairing.
-Worktrees that were always outside the repo never changed path and need nothing.
+
+Worktrees that were always outside the repo keep their path, so **their slug dir
+needs nothing** — but they are **not** finished: their `.git` file still points at
+`$OLD_REPO`, so they need the no-argument `git worktree repair` like every other
+worktree. Only the Claude-side move is skipped, never the git-side repair.
 
 **And do not prune first.** In exactly this state every moved worktree looks
 prunable, and pruning destroys the linkage beyond what repair can fix — see the
