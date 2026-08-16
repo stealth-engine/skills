@@ -17,12 +17,19 @@ SKILL=~/.claude/skills/claude-code-repo-migration        # wherever this skill i
 OLD_REPO=/home/USER/projects/OLD_PARENT/REPO             # fill in — absolute, no trailing /
 NEW_REPO=/home/USER/projects/NEW_PARENT/REPO             # fill in
 PROJ=~/.claude/projects
+BK=~/.claude/backups/repo-move-$(date +%Y%m%d-%H%M%S)   # inventory + backups land here
+mkdir -p "$BK"
 
 python3 "$SKILL/scripts/claude-slug.py" "$OLD_REPO" "$NEW_REPO"
 ```
 
 The slug script prints `<slug>\t<exists|absent>\t<path>`. Set `OLD_SLUG` /
 `NEW_SLUG` from its output — do not hand-roll the transform.
+
+**If `OLD_SLUG` and `NEW_SLUG` come out identical**, the rename only changed
+characters the slug flattens (`my_app` → `my-app`, say). The session dir is
+already correct: skip every slug move below and change the registry only. Moving
+a directory onto itself fails and would abort the chain.
 
 ## 1. Inventory (read-only — mutate nothing)
 
@@ -45,14 +52,23 @@ ls -1 "$PROJ/$OLD_SLUG"/*.jsonl | wc -l  # session count — record it for verif
 ```
 
 Every slug dir this repo owns, derived from **real paths**, never from slug-name
-prefixes:
+prefixes. Record the list — later steps need it:
 
 ```bash
-git -C "$OLD_REPO" worktree list --porcelain | awk '/^worktree /{print $2}'
+git -C "$OLD_REPO" worktree list --porcelain | sed -n 's/^worktree //p' > "$BK/worktree-paths.txt"
 ```
 
-Feed those paths to `claude-slug.py` — the ones marked `exists` are extra slug
-dirs that must move too.
+Strip the prefix with `sed`, not `awk '{print $2}'` — a worktree path containing
+a space is silently truncated at the space (verified).
+
+Feed those paths to `claude-slug.py`, then split them by **where they live**:
+
+- **Inside `$OLD_REPO`** (e.g. `$OLD_REPO/.claude/worktrees/x`) — the path changes
+  with the move, so its slug dir must move too, and its git admin files need repair.
+- **Outside `$OLD_REPO`** (a sandbox or job tmp dir) — the path does **not** change,
+  so its slug dir **stays exactly where it is**. Moving it would orphan those
+  sessions. It still needs `git worktree repair`, because its pointer *into* the
+  repo changed.
 
 Repo health, each on its own line:
 
@@ -91,15 +107,19 @@ worktrees affected, the sibling repos being left alone, and whether any other
 ## 2. Back up (mutates nothing you care about)
 
 ```bash
-BK=~/.claude/backups/repo-move-$(date +%Y%m%d-%H%M%S)
-mkdir -p "$BK"
 cp -a "$PROJ/$OLD_SLUG" "$BK/projects-slug-backup"
 cp -a ~/.claude.json "$BK/claude.json.bak"
-git -C "$OLD_REPO" diff > "$BK/uncommitted-tracked.patch"
-git -C "$OLD_REPO" ls-files --others --exclude-standard -z \
-  | tar --null -C "$OLD_REPO" -T - -czf "$BK/untracked-files.tgz"
+git -C "$OLD_REPO" diff HEAD --binary > "$BK/uncommitted-tracked.patch"
+git -C "$OLD_REPO" ls-files --others --exclude-standard -z > "$BK/untracked-list.z"
+tar --null -C "$OLD_REPO" -T "$BK/untracked-list.z" -czf "$BK/untracked-files.tgz"
 ls -la "$BK"
 ```
+
+- `diff HEAD --binary`, not bare `diff`: bare `git diff` omits **staged** changes
+  and cannot carry binary content, so a plain patch silently loses both.
+- The file list is written and checked **before** `tar` reads it. Piping
+  `ls-files | tar` hands `tar` an empty list when `ls-files` fails, and it happily
+  produces an empty archive and exits 0 — a backup that looks fine and holds nothing.
 
 Back up each extra (worktree) slug dir the same way before touching it.
 
@@ -121,9 +141,14 @@ Notes:
 - Plain `mv src dst` renames only because step 1 proved `dst` does not exist —
   re-check immediately before running. (`mv -T` guards that case explicitly but is
   a GNU coreutils flag; it is not on a stock macOS/BSD `mv`.)
+- Drop the slug `mv` entirely when `OLD_SLUG` equals `NEW_SLUG` (see step 0).
 - `rename()` preserves the inode, so a shell sitting in the repo follows it.
-- Extra slug dirs (worktrees) move with their **own** `mv`, one per directory,
-  each result checked — a loop would fold their statuses into one.
+- Slug dirs for worktrees **inside** the repo move with their **own** `mv`, one per
+  directory, each result checked — a loop would fold their statuses into one.
+  Worktrees **outside** the repo keep their path: leave their slug dirs alone.
+- **The chain stops; it does not undo.** If a later step fails, the earlier ones
+  have already landed (registry repointed, slug moved) — go to step 7 and roll back
+  the steps that succeeded before retrying.
 - **Only if your own session is live inside the moved slug dir**, leave a
   compatibility symlink so its continued writes still land there:
   `ln -s -- "$NEW_SLUG" "$PROJ/$OLD_SLUG"`. Running from outside the repo makes
@@ -135,9 +160,22 @@ Notes:
 The move invalidated absolute paths in `<repo>/.git/worktrees/<name>/gitdir` and
 in each worktree's `.git` file.
 
+Run it twice, because the two cases need different arguments. First, with no
+arguments, to fix the worktrees that did **not** move (their `.git` file still
+points at the repo's old location):
+
 ```bash
-git -C "$NEW_REPO" worktree repair                      # worktrees that did NOT move
-git -C "$NEW_REPO" worktree repair "$NEW_REPO"/.claude/worktrees/*   # ones that moved with the repo
+git -C "$NEW_REPO" worktree repair
+```
+
+Then, for the worktrees that moved *with* the repo, pass their **new** paths.
+Take them from `$BK/worktree-paths.txt` (step 1) — the entries under `$OLD_REPO`,
+with the prefix rewritten to `$NEW_REPO`. Pass those explicit paths, one
+invocation, quoted. Do **not** glob `"$NEW_REPO"/.claude/worktrees/*`: worktrees
+nested anywhere else are missed, and with no matches Bash hands `git` a literal
+`*` and the command fails.
+
+```bash
 git -C "$NEW_REPO" worktree list
 ```
 

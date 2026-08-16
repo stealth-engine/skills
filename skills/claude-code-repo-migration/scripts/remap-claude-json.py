@@ -43,7 +43,9 @@ def main(argv: list[str]) -> int:
         print("REFUSING: OLD and NEW are the same path", file=sys.stderr)
         return 1
 
-    registry = os.path.expanduser("~/.claude.json")
+    # realpath: a dotfile-managed ~/.claude.json is often a symlink, and os.replace
+    # on the link path would swap the link itself for a regular file.
+    registry = os.path.realpath(os.path.expanduser("~/.claude.json"))
     with open(registry, encoding="utf-8") as fh:
         data = json.load(fh)
 

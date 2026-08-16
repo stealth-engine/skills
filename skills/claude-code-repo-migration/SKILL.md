@@ -56,7 +56,7 @@ per-session subdirectories are easy to miss with a glob.
 > worktree slug dirs where `.claude` appears as `-claude`, and asserted against
 > 15 existing path→slug pairs. Use [`scripts/claude-slug.py`](./scripts/claude-slug.py).
 
-Three consequences:
+Four consequences:
 
 - **`sed 's:/:-:g'` is wrong** for any path containing `.`, `_`, or a space — the
   common "is the new slug free?" precheck then passes vacuously against a name
@@ -64,14 +64,21 @@ Three consequences:
 - **Slugs collide.** `my_app`, `my.app`, `my-app` and `my/app` all produce
   `my-app`. An occupied destination slug may belong to a *different* project —
   stop and look, never merge blindly.
+- **A real rename can leave the slug unchanged.** `my_app` → `my-app` is a genuine
+  move on disk that flattens to the same slug. Then the session dir is already
+  right: change the registry key only, and do not move a directory onto itself.
 - **Never derive the slug from a transcript's `cwd`.** Verified false on this
   machine: several worktree slug dirs hold transcripts whose first `cwd` is the
   main repo or even a *different* worktree. Derive from the path, not the file.
 
 ## Enumerate the slug dirs the repo owns — from real paths, never string prefixes
 
-A repo with git worktrees under it owns **several** slug dirs. Get them by
-listing the real paths (`git worktree list`) and slugging each one.
+A repo with git worktrees owns **several** slug dirs. Get them by listing the real
+paths (`git worktree list`) and slugging each one — then split them by location:
+only worktrees **inside** the repo change path when the repo moves, so only their
+slug dirs move. A worktree parked **outside** the repo keeps its path, so its slug
+dir must be left exactly where it is (it still needs a git repair, since its
+pointer *into* the repo changed).
 
 Do **not** collect them by prefix-matching slug names: because every separator
 flattens to `-`, `-a-b-c` may be `/a/b/c`, `/a/b-c` or `/a/b.c`. A sibling
@@ -176,9 +183,11 @@ touch files no live session is appending to.
 
 ## Preconditions and portability
 
-- **Same filesystem** for repo and `~/.claude` (verified same device here) so the
-  rename is atomic and open fds follow. Across filesystems `mv` still copies, but
-  do it with nothing live in the slug and skip the symlink hedge.
+- **Same filesystem for `OLD_REPO` and `NEW_REPO`** — that is the move whose
+  atomicity is at stake. (The slug dirs are siblings inside `~/.claude/projects`,
+  so that rename is always same-device; the repo-vs-`~/.claude` comparison is
+  irrelevant.) Across filesystems `mv` still copies, but open fds won't follow — do
+  it with nothing live in the slug and skip the symlink hedge.
 - **Every slug starts with `-`**, so `ls`, `mv`, `cp` and `rm` read a bare slug as
   a flag. Always use absolute paths, `./`, or `--`.
 - `mv -T` is a **GNU coreutils** flag (9.4 here) and is the same portability class
