@@ -125,29 +125,35 @@ npx skills use owner/repo@skill      # one-off prompt without installing
 
 ### Multi-value flags are space-separated, never comma-separated
 
-`-s/--skill` and `-a/--agent` are **variadic**: repeat the value or separate with
-spaces. A comma-separated list is not parsed as a list, and the two flags fail
-*differently* — one loudly, one not at all:
+`-s/--skill` and `-a/--agent` are **variadic**: separate values with spaces, or
+repeat the flag. A comma-separated list is not parsed as a list — both flags
+reject it and **exit 1**:
 
 ```bash
-npx skills add owner/repo -s a b -a claude-code codex   # works (variadic)
-npx skills add owner/repo -s a -s b -a claude-code -a codex   # works (repeated)
+npx skills add owner/repo -s a b -a claude-code codex          # works
+npx skills add owner/repo -s a -s b -a claude-code -a codex    # works (repeated)
 
-npx skills add owner/repo -a claude-code,codex   # ■ Invalid agents: claude-code,codex
-npx skills add owner/repo -s a,b                 # ■ No matching skills found — AND EXITS 0
+npx skills add owner/repo -a claude-code,codex   # ■ Invalid agents: claude-code,codex   → exit 1
+npx skills add owner/repo -s a,b                 # ■ No matching skills found for: a,b   → exit 1
 ```
 
-- The `-a` comma form **errors, then prints a valid-agent list containing the very
-  names you just passed** — the message reads like a bug in the tool rather than a
-  parsing problem, which is what makes it cost time.
-- The `-s` comma form is the dangerous one: it prints "No matching skills found",
-  lists the available skills, installs **nothing**, and **exits 0**. In a script or
-  CI step that checks the exit code, a typo'd separator is a silent no-op that
-  reports success. Verify what landed on disk, not the exit status.
+Both fail cleanly: nothing is installed and no lock file is written. The `-a`
+message is the confusing one — it prints a valid-agent list **containing the very
+names you just passed**, so it reads like a bug in the tool rather than a parsing
+problem.
 
 **Agent names are not the informal ones.** It's `claude-code`, not `claude`
 (`codex`, `cursor`, `github-copilot`, `gemini-cli` are themselves valid). `*`
 selects all. The full accepted list is printed by any invalid `-a` value.
+
+> **Don't read this CLI's status through an unguarded pipe.** A shell pipeline
+> returns the *last* stage's status unless `pipefail` is set, so the common
+> `npx skills add … | grep …` idiom reports **0** while `npx` itself exited **1**:
+> measured `npx=1, grep=0, pipeline $?=0`, and `set -o pipefail` correctly yields 1.
+> That is how an earlier version of this section came to claim a silent fail-open
+> that does not exist — the trap was in the measurement, not the tool. Check
+> `PIPESTATUS`/`pipefail`, or better, **verify what landed on disk rather than
+> trusting any exit status.**
 
 ### `--all` writes more than you think
 
