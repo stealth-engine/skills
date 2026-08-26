@@ -4,7 +4,7 @@ description: How to author and publish agent skills for the skills.sh / `npx ski
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.1.0"
+  version: "1.2.0"
 ---
 
 # skill-publishing
@@ -112,8 +112,8 @@ npx skills init skills/<name>        # scaffold a new skill folder + SKILL.md
 
 npx skills add owner/repo            # interactive: pick skills + agents
 npx skills add owner/repo --list     # browse the repo, install nothing
-npx skills add owner/repo --skill a b   # install specific skills
-npx skills add owner/repo --all -g   # everything, all agents, global — no prompts
+npx skills add owner/repo --skill a b   # specific skills (space-separated, NOT a,b)
+npx skills add owner/repo --all -g   # everything, ALL ~19 agents, global (see below)
 npx skills add owner/repo --copy     # copy instead of symlink into agent dirs
 
 npx skills list                      # installed skills (-g for global)
@@ -123,14 +123,72 @@ npx skills remove [name...]          # remove
 npx skills use owner/repo@skill      # one-off prompt without installing
 ```
 
-Flags that matter: `-s/--skill`, `-a/--agent` (`*` = all), `-g/--global`,
-`-l/--list`, `-y/--yes` (skip prompts), `--all`, `--full-depth` (scan every
-subdirectory even when a root `SKILL.md` exists — needed for a repo that has both
-a root skill and a `skills/` dir). Telemetry is on by default; set
-`DISABLE_TELEMETRY=1` (or `DO_NOT_TRACK=1`) to opt out.
+### Multi-value flags are space-separated, never comma-separated
 
-> Provenance: CLI commands, flags, and behaviour verified against `skills`
-> v1.5.x (2026-07). The CLI iterates fast — re-check flags if it's since moved.
+`-s/--skill` and `-a/--agent` are **variadic**: separate values with spaces, or
+repeat the flag. A comma-separated list is not parsed as a list — both flags
+reject it and **exit 1**:
+
+```bash
+npx skills add owner/repo -s a b -a claude-code codex          # works
+npx skills add owner/repo -s a -s b -a claude-code -a codex    # works (repeated)
+
+npx skills add owner/repo -a claude-code,codex   # ■ Invalid agents: claude-code,codex   → exit 1
+npx skills add owner/repo -s a,b                 # ■ No matching skills found for: a,b   → exit 1
+```
+
+Both fail cleanly: nothing is installed and no lock file is written. The `-a`
+message is the confusing one — it prints a valid-agent list **containing the very
+names you just passed**, so it reads like a bug in the tool rather than a parsing
+problem.
+
+**Agent names are not the informal ones.** It's `claude-code`, not `claude`
+(`codex`, `cursor`, `github-copilot`, `gemini-cli` are themselves valid). `*`
+selects all. The full accepted list is printed by any invalid `-a` value.
+
+> **Don't read this CLI's status through an unguarded pipe.** A shell pipeline
+> returns the *last* stage's status unless `pipefail` is set, so the common
+> `npx skills add … | grep …` idiom reports **0** while `npx` itself exited **1**:
+> measured `npx=1, grep=0, pipeline $?=0`, and `set -o pipefail` correctly yields 1.
+> That is how an earlier version of this section came to claim a silent fail-open
+> that does not exist — the trap was in the measurement, not the tool. Check
+> `PIPESTATUS`/`pipefail`, or better, **verify what landed on disk rather than
+> trusting any exit status.**
+
+### `--all` writes more than you think
+
+`--all` is shorthand for `--skill '*' --agent '*' -y` — *every* agent, which is
+~19 directories, not just the ones you use. It also creates a **non-hidden
+top-level `agent/`** directory holding a second full copy of every skill,
+alongside `.agents/` and `.claude/`. In a repo that is `git add -A` bait, and
+`npx skills remove --all` does not remove the now-empty `agent/` directory.
+Prefer naming the agents you actually want.
+
+### Lock files: project and global differ
+
+| | Project scope | Global scope (`-g`) |
+| --- | --- | --- |
+| Path | `skills-lock.json` at the repo root | `~/.agents/.skill-lock.json` |
+| Version | `1` | `3` |
+| Per-skill | `computedHash`, `skillPath`, `source`, `sourceType` | `skillFolderHash`, `installedAt`, `updatedAt`, `sourceUrl`, … |
+
+Neither contains absolute paths, so the **project lock file is safe to commit** —
+and committing it is how you keep the installed set reproducible while
+`.gitignore`-ing the agent directories themselves, so vendored copies never enter
+git. `experimental_install` ("Restore skills from `skills-lock.json`") and
+`experimental_sync` exist for that flow; both are listed in `--help` but their
+behaviour is unverified here.
+
+Other flags: `-g/--global`, `-l/--list`, `-y/--yes` (skip prompts),
+`--copy` (copy instead of symlink), `--full-depth` (scan every subdirectory even
+when a root `SKILL.md` exists — needed for a repo that has both a root skill and a
+`skills/` dir). Telemetry is on by default; set `DISABLE_TELEMETRY=1` (or
+`DO_NOT_TRACK=1`) to opt out.
+
+> Provenance: verified by running each invocation against `skills` **v1.5.23**
+> (2026-08) — including the failure modes above, which are not in `--help`; its
+> `-a, --agent <agents>` wording reads as list-accepting. The CLI iterates fast —
+> re-check if it's since moved.
 
 ## Publishing to GitHub
 
